@@ -203,28 +203,80 @@ public struct HistorySnapshot: Sendable, Codable, Equatable {
 // MARK: - Phase 3 config
 
 public struct AlertConfig: Sendable, Codable, Equatable {
-    public var cpuTempCelsius: Double
-    public var fanNearMaxPercent: Double
-    public var memoryPressureNotify: Bool
     public var enabled: Bool
+    /// Push triggered alerts to Slack / Telegram / mail (with cooldown).
+    public var notifyIntegrations: Bool
+    public var notifyCooldownSeconds: Double
+
+    public var cpuTempEnabled: Bool
+    public var cpuTempCelsius: Double
+
+    public var gpuTempEnabled: Bool
+    public var gpuTempCelsius: Double
+
+    public var fanEnabled: Bool
+    public var fanNearMaxPercent: Double
+
+    public var memoryPressureNotify: Bool
+
+    public var diskEnabled: Bool
+    public var diskUsedPercentMax: Double
+
+    public var batteryEnabled: Bool
+    public var batteryPercentMin: Double
+
+    public var lowPowerModeNotify: Bool
 
     public static let `default` = AlertConfig(
+        enabled: true,
+        notifyIntegrations: true,
+        notifyCooldownSeconds: 300,
+        cpuTempEnabled: true,
         cpuTempCelsius: 90,
+        gpuTempEnabled: true,
+        gpuTempCelsius: 90,
+        fanEnabled: true,
         fanNearMaxPercent: 95,
         memoryPressureNotify: true,
-        enabled: true
+        diskEnabled: true,
+        diskUsedPercentMax: 90,
+        batteryEnabled: true,
+        batteryPercentMin: 15,
+        lowPowerModeNotify: true
     )
 
     public init(
+        enabled: Bool,
+        notifyIntegrations: Bool,
+        notifyCooldownSeconds: Double,
+        cpuTempEnabled: Bool,
         cpuTempCelsius: Double,
+        gpuTempEnabled: Bool,
+        gpuTempCelsius: Double,
+        fanEnabled: Bool,
         fanNearMaxPercent: Double,
         memoryPressureNotify: Bool,
-        enabled: Bool
+        diskEnabled: Bool,
+        diskUsedPercentMax: Double,
+        batteryEnabled: Bool,
+        batteryPercentMin: Double,
+        lowPowerModeNotify: Bool
     ) {
+        self.enabled = enabled
+        self.notifyIntegrations = notifyIntegrations
+        self.notifyCooldownSeconds = notifyCooldownSeconds
+        self.cpuTempEnabled = cpuTempEnabled
         self.cpuTempCelsius = cpuTempCelsius
+        self.gpuTempEnabled = gpuTempEnabled
+        self.gpuTempCelsius = gpuTempCelsius
+        self.fanEnabled = fanEnabled
         self.fanNearMaxPercent = fanNearMaxPercent
         self.memoryPressureNotify = memoryPressureNotify
-        self.enabled = enabled
+        self.diskEnabled = diskEnabled
+        self.diskUsedPercentMax = diskUsedPercentMax
+        self.batteryEnabled = batteryEnabled
+        self.batteryPercentMin = batteryPercentMin
+        self.lowPowerModeNotify = lowPowerModeNotify
     }
 }
 

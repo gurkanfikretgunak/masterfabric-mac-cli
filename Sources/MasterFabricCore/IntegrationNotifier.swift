@@ -78,11 +78,19 @@ public enum IntegrationNotifier {
             return NotifyDeliveryResult(channel: "telegram", ok: false, detail: "Not configured / disabled")
         }
         let token = cfg.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chatID = cfg.chatID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let numericChatID = Int(chatID) else {
+            return NotifyDeliveryResult(
+                channel: "telegram",
+                ok: false,
+                detail: "chat_id must be numeric (example: 123456789 — not @username)"
+            )
+        }
         guard let url = URL(string: "https://api.telegram.org/bot\(token)/sendMessage") else {
             return NotifyDeliveryResult(channel: "telegram", ok: false, detail: "Invalid bot token / URL")
         }
         let payload: [String: Any] = [
-            "chat_id": cfg.chatID,
+            "chat_id": numericChatID,
             "text": text,
             "disable_web_page_preview": true,
         ]

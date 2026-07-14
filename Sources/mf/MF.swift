@@ -26,6 +26,7 @@ struct MF: AsyncParsableCommand {
             Login.self,
             Check.self,
             Notify.self,
+            Bot.self,
             About.self,
             MenuBar.self,
             MCP.self,
@@ -234,12 +235,34 @@ extension MF {
                     c.pollIntervalSeconds = Double(value) ?? c.pollIntervalSeconds
                 case "alerts.enabled":
                     c.alerts.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.notify_integrations":
+                    c.alerts.notifyIntegrations = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.notify_cooldown_seconds":
+                    c.alerts.notifyCooldownSeconds = Double(value) ?? c.alerts.notifyCooldownSeconds
+                case "alerts.cpu_temp_enabled":
+                    c.alerts.cpuTempEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "alerts.cpu_temp_celsius":
                     c.alerts.cpuTempCelsius = Double(value) ?? c.alerts.cpuTempCelsius
+                case "alerts.gpu_temp_enabled":
+                    c.alerts.gpuTempEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.gpu_temp_celsius":
+                    c.alerts.gpuTempCelsius = Double(value) ?? c.alerts.gpuTempCelsius
+                case "alerts.fan_enabled":
+                    c.alerts.fanEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "alerts.fan_near_max_percent":
                     c.alerts.fanNearMaxPercent = Double(value) ?? c.alerts.fanNearMaxPercent
                 case "alerts.memory_pressure_notify":
                     c.alerts.memoryPressureNotify = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.disk_enabled":
+                    c.alerts.diskEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.disk_used_percent_max":
+                    c.alerts.diskUsedPercentMax = Double(value) ?? c.alerts.diskUsedPercentMax
+                case "alerts.battery_enabled":
+                    c.alerts.batteryEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.battery_percent_min":
+                    c.alerts.batteryPercentMin = Double(value) ?? c.alerts.batteryPercentMin
+                case "alerts.low_power_mode_notify":
+                    c.alerts.lowPowerModeNotify = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "integrations.slack.enabled":
                     c.integrations.slack.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "integrations.slack.webhook_url":
@@ -425,6 +448,38 @@ extension MF {
                 if results.contains(where: { !$0.ok }) {
                     throw ExitCode.failure
                 }
+            }
+        }
+    }
+
+    struct Bot: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Run interactive bots that answer with live Mac metrics.",
+            subcommands: [Telegram.self],
+            defaultSubcommand: Telegram.self
+        )
+
+        struct Telegram: ParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Long-poll Telegram: reply to /status, /temp, questions, etc. with machine data."
+            )
+
+            @Option(name: .long, help: "Extra allowed chat_id (numeric). Can repeat.")
+            var allowChat: [Int] = []
+
+            func run() throws {
+                var options = try TelegramBotService.optionsFromConfig()
+                for id in allowChat {
+                    options.allowedChatIDs.insert(id)
+                }
+                guard !options.allowedChatIDs.isEmpty else {
+                    throw ValidationError(
+                        "Set a numeric chat_id first:\n  mf config set integrations.telegram.chat_id \"123456789\"\nThen: mf bot telegram"
+                    )
+                }
+                print("Starting Telegram bot (Ctrl+C to stop)…")
+                fflush(stdout)
+                try TelegramBotService.run(options: options)
             }
         }
     }

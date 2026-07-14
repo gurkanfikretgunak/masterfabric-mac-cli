@@ -62,9 +62,23 @@ public enum ConfigStore {
             } else if section == "alerts" {
                 switch key {
                 case "enabled": config.alerts.enabled = value == "true"
+                case "notify_integrations": config.alerts.notifyIntegrations = value == "true"
+                case "notify_cooldown_seconds":
+                    config.alerts.notifyCooldownSeconds = Double(value) ?? config.alerts.notifyCooldownSeconds
+                case "cpu_temp_enabled": config.alerts.cpuTempEnabled = value == "true"
                 case "cpu_temp_celsius": config.alerts.cpuTempCelsius = Double(value) ?? config.alerts.cpuTempCelsius
+                case "gpu_temp_enabled": config.alerts.gpuTempEnabled = value == "true"
+                case "gpu_temp_celsius": config.alerts.gpuTempCelsius = Double(value) ?? config.alerts.gpuTempCelsius
+                case "fan_enabled": config.alerts.fanEnabled = value == "true"
                 case "fan_near_max_percent": config.alerts.fanNearMaxPercent = Double(value) ?? config.alerts.fanNearMaxPercent
                 case "memory_pressure_notify": config.alerts.memoryPressureNotify = value == "true"
+                case "disk_enabled": config.alerts.diskEnabled = value == "true"
+                case "disk_used_percent_max":
+                    config.alerts.diskUsedPercentMax = Double(value) ?? config.alerts.diskUsedPercentMax
+                case "battery_enabled": config.alerts.batteryEnabled = value == "true"
+                case "battery_percent_min":
+                    config.alerts.batteryPercentMin = Double(value) ?? config.alerts.batteryPercentMin
+                case "low_power_mode_notify": config.alerts.lowPowerModeNotify = value == "true"
                 default: break
                 }
             } else if section == "integrations.slack" {
@@ -131,9 +145,20 @@ public enum ConfigStore {
 
         [alerts]
         enabled = \(config.alerts.enabled)
+        notify_integrations = \(config.alerts.notifyIntegrations)
+        notify_cooldown_seconds = \(config.alerts.notifyCooldownSeconds)
+        cpu_temp_enabled = \(config.alerts.cpuTempEnabled)
         cpu_temp_celsius = \(config.alerts.cpuTempCelsius)
+        gpu_temp_enabled = \(config.alerts.gpuTempEnabled)
+        gpu_temp_celsius = \(config.alerts.gpuTempCelsius)
+        fan_enabled = \(config.alerts.fanEnabled)
         fan_near_max_percent = \(config.alerts.fanNearMaxPercent)
         memory_pressure_notify = \(config.alerts.memoryPressureNotify)
+        disk_enabled = \(config.alerts.diskEnabled)
+        disk_used_percent_max = \(config.alerts.diskUsedPercentMax)
+        battery_enabled = \(config.alerts.batteryEnabled)
+        battery_percent_min = \(config.alerts.batteryPercentMin)
+        low_power_mode_notify = \(config.alerts.lowPowerModeNotify)
 
         [integrations.slack]
         enabled = \(s.enabled)

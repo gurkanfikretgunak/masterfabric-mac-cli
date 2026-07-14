@@ -123,6 +123,7 @@ mf battery | memory | disk | network | cpu
 mf power | top | history | watch
 mf check [--notify]
 mf notify status | test | send --channel slack "hello"
+mf bot telegram
 mf config show | init | set <key> <value>
 mf login enable | disable | status
 mf about [--lang en|tr]
@@ -167,6 +168,27 @@ Full sample: [examples/integrations.toml](examples/integrations.toml)
 | **Mail** | `resend` / `mailgun` API key, or `smtp` (via `python3` smtplib) |
 
 MCP tools: `notify_send`, `notify_status`.
+
+### Telegram interactive bot (Q&A)
+
+Keep a process running on the Mac so the bot can answer questions with live metrics:
+
+```bash
+mf bot telegram
+```
+
+Then in Telegram:
+
+```text
+/status
+/temp
+/fan
+/battery
+how's the fan?
+cpu load?
+```
+
+Only the configured numeric `chat_id` is allowed. Ctrl+C stops the listener.
 
 ---
 
