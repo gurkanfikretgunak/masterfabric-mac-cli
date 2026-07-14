@@ -153,29 +153,65 @@ struct IntegrationBrandBadge: View {
 }
 
 enum BrandAssets {
-    /// Resolves SPM `Bundle.module`, installed `.app` Resources, or sibling resource bundle.
+    /// Resolve brand PNGs without touching SPM `Bundle.module` (that accessor
+    /// fatally asserts when the .app is installed without the SPM `.bundle`).
     static func nsImage(named name: String) -> NSImage? {
-        if let url = Bundle.module.url(forResource: name, withExtension: "png"),
-           let image = NSImage(contentsOf: url)
-        {
-            return image
-        }
+        // 1) Installed .app: Contents/Resources (copied by `make install`)
         if let url = Bundle.main.url(forResource: name, withExtension: "png"),
            let image = NSImage(contentsOf: url)
         {
             return image
         }
-        // Installed app: Contents/Resources next to MacOS/
+
+        // 2) SPM resource bundle next to the binary / inside Resources (dev installs)
+        if let bundle = adjacentResourceBundle(),
+           let url = bundle.url(forResource: name, withExtension: "png"),
+           let image = NSImage(contentsOf: url)
+        {
+            return image
+        }
+
+        // 3) Explicit filesystem fallbacks
         let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates = [
-            exe.deletingLastPathComponent().appendingPathComponent("../Resources/\(name).png"),
-            exe.deletingLastPathComponent().appendingPathComponent("\(name).png"),
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".local/MasterFabricMenuBar.app/Contents/Resources/\(name).png"),
+            exe.deletingLastPathComponent()
+                .appendingPathComponent("../Resources/\(name).png"),
+            exe.deletingLastPathComponent()
+                .appendingPathComponent("\(name).png"),
+            Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Resources/\(name).png"),
+            home.appendingPathComponent(".local/MasterFabricMenuBar.app/Contents/Resources/\(name).png"),
+            home.appendingPathComponent(".local/bin/\(name).png"),
         ]
         for url in candidates {
             let resolved = url.standardizedFileURL
-            if let image = NSImage(contentsOf: resolved) { return image }
+            if FileManager.default.fileExists(atPath: resolved.path),
+               let image = NSImage(contentsOf: resolved)
+            {
+                return image
+            }
+        }
+        return nil
+    }
+
+    private static func adjacentResourceBundle() -> Bundle? {
+        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let bundleNames = [
+            "MasterFabric_MasterFabricMenuBar.bundle",
+            "MasterFabricMenuBar_MasterFabricMenuBar.bundle",
+        ]
+        let dirs = [
+            exe.deletingLastPathComponent(),
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources"),
+            Bundle.main.bundleURL,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin"),
+        ]
+        for dir in dirs {
+            for name in bundleNames {
+                let url = dir.appendingPathComponent(name)
+                if let bundle = Bundle(url: url) { return bundle }
+            }
         }
         return nil
     }

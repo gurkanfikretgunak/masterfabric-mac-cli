@@ -22,11 +22,13 @@ install: release
 	# Bundle official Slack / Telegram logos into the .app Resources
 	cp -f Sources/MasterFabricMenuBar/Resources/brand-slack.png "$(APP_DIR)/Contents/Resources/brand-slack.png"
 	cp -f Sources/MasterFabricMenuBar/Resources/brand-telegram.png "$(APP_DIR)/Contents/Resources/brand-telegram.png"
-	# Also copy SPM resource bundle next to the naked binary (dev / bin launch)
+	# SPM resource bundle (optional) — prefer Contents/Resources PNGs; keep bundle for bin launch
 	@bundle=$$(ls -d .build/*/release/MasterFabric_MasterFabricMenuBar.bundle .build/release/MasterFabric_MasterFabricMenuBar.bundle 2>/dev/null | head -1); \
 	if [ -n "$$bundle" ]; then \
 		rm -rf "$(BIN_DIR)/MasterFabric_MasterFabricMenuBar.bundle"; \
 		cp -R "$$bundle" "$(BIN_DIR)/"; \
+		rm -rf "$(APP_DIR)/Contents/Resources/MasterFabric_MasterFabricMenuBar.bundle"; \
+		cp -R "$$bundle" "$(APP_DIR)/Contents/Resources/"; \
 	fi
 	# macOS (esp. Tahoe+) kills unsigned binaries with SIGKILL — ad-hoc sign after copy
 	xattr -cr "$(BIN_DIR)/mf" "$(BIN_DIR)/MasterFabricMenuBar" "$(APP_DIR)" 2>/dev/null || true

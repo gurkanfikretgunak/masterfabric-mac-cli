@@ -696,11 +696,33 @@ extension MF {
             abstract: "Launch the MasterFabric menu bar app."
         )
         func run() throws {
+            // Prefer opening the .app bundle so Resources (brand logos) resolve via Bundle.main.
             if let app = resolveMenuBarApp() {
+                // Replace any stale instance so we always run the installed binary.
+                let kill = Process()
+                kill.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+                kill.arguments = ["MasterFabricMenuBar"]
+                try? kill.run()
+                kill.waitUntilExit()
+                Thread.sleep(forTimeInterval: 0.2)
+
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                process.arguments = ["-a", app]
+                process.arguments = ["-n", "-a", app]
                 try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    // Fallback: launch executable directly
+                    let exe = "\(app)/Contents/MacOS/MasterFabricMenuBar"
+                    guard FileManager.default.isExecutableFile(atPath: exe) else {
+                        throw ValidationError("Menu bar app missing executable at \(exe). Run `make install`.")
+                    }
+                    let direct = Process()
+                    direct.executableURL = URL(fileURLWithPath: exe)
+                    try direct.run()
+                    print("Launched MasterFabricMenuBar (direct) from \(exe)")
+                    return
+                }
                 print("Launched \(app)")
                 return
             }
