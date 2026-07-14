@@ -255,6 +255,10 @@ struct StatusHomeView: View {
 
             Divider()
 
+            AboutSection()
+
+            Divider()
+
             Button("Refresh") { model.refresh() }
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
@@ -266,6 +270,44 @@ struct StatusHomeView: View {
             Text(label).foregroundStyle(.secondary)
             Spacer()
             Text(value).font(.body.monospacedDigit())
+        }
+    }
+}
+
+struct AboutSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("About")
+                .font(.subheadline.weight(.semibold))
+
+            Text("\(AboutInfo.product) v\(AboutInfo.version)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 4) {
+                Text("Author")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Link(AboutInfo.author, destination: URL(string: AboutInfo.authorURL)!)
+                    .font(.caption)
+            }
+
+            HStack(spacing: 4) {
+                Text("Company")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Link("MasterFabric · masterfabric.co", destination: URL(string: AboutInfo.companyURL)!)
+                    .font(.caption)
+            }
+
+            Text("Open-source company · MIT")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Link("GitHub repo", destination: URL(string: AboutInfo.repoURL)!)
+                .font(.caption2)
         }
     }
 }
