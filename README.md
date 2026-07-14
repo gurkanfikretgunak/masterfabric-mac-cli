@@ -68,6 +68,7 @@ Copy-paste starter: [examples/mcp.json](examples/mcp.json)
 | `get_power` | Thermal state, Low Power Mode |
 | `get_top` / `get_history` | Hot processes + 1h sparklines |
 | `set_alert_threshold` | Update `config.toml` alerts |
+| `check_version` | Local vs GitHub open-source version |
 | `get_about` | Version + privacy |
 
 **Resource:** `masterfabric://status` — live JSON snapshot.
@@ -149,6 +150,7 @@ mf power | top | history | watch
 mf check [--notify]
 mf notify status | test | send --channel slack "hello"
 mf bot telegram
+mf version [--check]
 mf config show | init | set <key> <value>
 mf login enable | disable | status
 mf about [--lang en|tr]
@@ -235,7 +237,25 @@ Only the configured numeric `chat_id` is allowed. Ctrl+C stops the listener.
 
 ---
 
-## Config & privacy
+## Version
+
+Single source of truth: root [`VERSION`](VERSION) (synced into `AppVersion.current` on build).
+
+```bash
+mf version              # local
+mf version --check      # compare to GitHub releases/tags (open-source repo)
+mf version --check --json
+```
+
+Exit code `2` means an update is available. Install/update from source:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gurkanfikretgunak/masterfabric-mac-cli/main/scripts/install.sh | bash
+```
+
+Bump a release: edit `VERSION`, run `make version-sync`, commit, tag `vX.Y.Z`.
+
+---
 
 `~/.config/masterfabric/config.toml` — language, poll interval, alert thresholds, launch-at-login.
 

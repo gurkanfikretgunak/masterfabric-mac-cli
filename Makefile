@@ -1,13 +1,14 @@
-.PHONY: build release install uninstall test-info clean screenshot
+.PHONY: build release install uninstall test-info clean screenshot version-sync version-check
 
 PREFIX ?= $(HOME)/.local
 BIN_DIR := $(PREFIX)/bin
 APP_DIR := $(PREFIX)/MasterFabricMenuBar.app
+VERSION := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo 0.0.0)
 
-build:
+build: version-sync
 	swift build
 
-release:
+release: version-sync
 	swift build -c release
 
 install: release
@@ -40,17 +41,29 @@ install: release
 	'<key>CFBundleName</key><string>MasterFabric</string>' \
 	'<key>CFBundleDisplayName</key><string>MasterFabric</string>' \
 	'<key>CFBundleIdentifier</key><string>com.masterfabric.menubar</string>' \
-	'<key>CFBundleVersion</key><string>0.2.0</string>' \
-	'<key>CFBundleShortVersionString</key><string>0.2.0</string>' \
+	'<key>CFBundleVersion</key><string>$(VERSION)</string>' \
+	'<key>CFBundleShortVersionString</key><string>$(VERSION)</string>' \
 	'<key>CFBundleExecutable</key><string>MasterFabricMenuBar</string>' \
 	'<key>CFBundlePackageType</key><string>APPL</string>' \
 	'<key>LSMinimumSystemVersion</key><string>13.0</string>' \
 	'<key>LSUIElement</key><true/>' \
 	'<key>NSHighResolutionCapable</key><true/>' \
 	'</dict></plist>' > "$(APP_DIR)/Contents/Info.plist"
-	@echo "Installed mf → $(BIN_DIR)/mf"
+	@echo "Installed mf v$(VERSION) → $(BIN_DIR)/mf"
 	@echo "Installed menu bar app → $(APP_DIR)"
 	@echo "Ensure $(BIN_DIR) is on your PATH."
+
+# Keep Sources/.../Version.swift `current` equal to root VERSION file.
+version-sync:
+	@test -f VERSION || (echo "missing VERSION file" >&2; exit 1)
+	@perl -0pi -e 's/public static let current = "[^"]*"/public static let current = "$(VERSION)"/' \
+		Sources/MasterFabricCore/Version.swift
+	@grep -q 'current = "$(VERSION)"' Sources/MasterFabricCore/Version.swift \
+		|| (echo "version-sync failed" >&2; exit 1)
+	@echo "Version synced: $(VERSION)"
+
+version-check: release
+	.build/release/mf version --check
 
 screenshot:
 	swift run GenerateScreenshot
@@ -58,10 +71,12 @@ screenshot:
 uninstall:
 	rm -f "$(BIN_DIR)/mf" "$(BIN_DIR)/MasterFabricMenuBar"
 	rm -rf "$(APP_DIR)"
+	rm -rf "$(BIN_DIR)/MasterFabric_MasterFabricMenuBar.bundle"
 
 test-info:
 	swift run mf info
 	swift run mf status
+	swift run mf version
 
 clean:
 	swift package clean

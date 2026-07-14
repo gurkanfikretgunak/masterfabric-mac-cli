@@ -27,6 +27,7 @@ struct MF: AsyncParsableCommand {
             Check.self,
             Notify.self,
             Bot.self,
+            Version.self,
             About.self,
             MenuBar.self,
             MCP.self,
@@ -480,6 +481,41 @@ extension MF {
                 print("Starting Telegram bot (Ctrl+C to stop)…")
                 fflush(stdout)
                 try TelegramBotService.run(options: options)
+            }
+        }
+    }
+
+    struct Version: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show local version; optionally check the open-source GitHub repo for updates."
+        )
+
+        @Flag(name: .long, help: "Query GitHub releases/tags for a newer version.")
+        var check: Bool = false
+
+        @OptionGroup var format: JSONFlagOptions
+
+        func run() throws {
+            if check {
+                let result = VersionService.check()
+                if format.json {
+                    print(try JSONOutput.string(result))
+                } else {
+                    print(VersionService.format(result))
+                }
+                if result.updateAvailable {
+                    throw ExitCode(2)
+                }
+            } else if format.json {
+                print(try JSONOutput.string([
+                    "version": AppVersion.current,
+                    "product": AboutInfo.product,
+                    "repo": AppVersion.repoURL,
+                ] as [String: String]))
+            } else {
+                print("\(AboutInfo.product) v\(AppVersion.current)")
+                print("Repo: \(AppVersion.repoURL)")
+                print("Check updates: mf version --check")
             }
         }
     }

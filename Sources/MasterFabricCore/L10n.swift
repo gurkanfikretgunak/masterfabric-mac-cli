@@ -49,13 +49,13 @@ public enum L10n {
 }
 
 public enum AboutInfo {
-    public static let version = "0.3.0"
+    public static var version: String { AppVersion.current }
     public static let product = "MasterFabric Mac CLI"
     public static let author = "gurkanfikretgunak"
     public static let authorURL = "https://github.com/gurkanfikretgunak"
     public static let company = "MasterFabric"
     public static let companyURL = "https://masterfabric.co"
-    public static let repoURL = "https://github.com/gurkanfikretgunak/masterfabric-mac-cli"
+    public static var repoURL: String { AppVersion.repoURL }
 
     public static func text(language: String? = nil) -> String {
         let lang = L10n.language(language)
@@ -72,6 +72,7 @@ public enum AboutInfo {
 
         Surfaces: CLI (`mf`) · Menu Bar · MCP (`mf mcp`)
         Config:   ~/.config/masterfabric/config.toml
+        Version:  mf version [--check]
         """
     }
 }

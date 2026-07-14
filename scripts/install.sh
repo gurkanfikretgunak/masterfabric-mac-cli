@@ -20,6 +20,9 @@ cd "$TMP/masterfabric-mac-cli"
 echo "==> Building release"
 make install PREFIX="$PREFIX"
 
+echo ""
+echo "Installed: $($PREFIX/bin/mf version 2>/dev/null || echo MasterFabric)"
+
 BIN_DIR="$PREFIX/bin"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

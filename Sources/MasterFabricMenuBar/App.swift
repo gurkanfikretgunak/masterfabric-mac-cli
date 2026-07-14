@@ -489,7 +489,7 @@ struct StatusHomeView: View {
 
             Divider()
 
-            AboutSection()
+            AboutSection(model: model)
 
             Divider()
 
@@ -509,6 +509,8 @@ struct StatusHomeView: View {
 }
 
 struct AboutSection: View {
+    @ObservedObject var model: MenuBarModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("About")
@@ -517,6 +519,13 @@ struct AboutSection: View {
             Text("\(AboutInfo.product) v\(AboutInfo.version)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Button("Check for updates") {
+                let result = VersionService.check()
+                model.lastNotifyMessage = VersionService.format(result)
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
 
             HStack(spacing: 4) {
                 Text("Author")

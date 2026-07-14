@@ -184,6 +184,11 @@ final class MCPServer {
             ),
             tool(name: "get_about", description: "Product version and privacy statement."),
             tool(
+                name: "check_version",
+                description: "Compare local MasterFabric version to the open-source GitHub repo (releases/tags).",
+                properties: [:]
+            ),
+            tool(
                 name: "notify_send",
                 description: "Send a message via Slack, Telegram, and/or mail integrations.",
                 properties: [
@@ -264,6 +269,8 @@ final class MCPServer {
             return try JSONOutput.string(c)
         case "get_about":
             return AboutInfo.text()
+        case "check_version":
+            return try JSONOutput.string(VersionService.check())
         case "notify_status":
             return try JSONOutput.string(ConfigStore.load().integrations)
         case "notify_send":
