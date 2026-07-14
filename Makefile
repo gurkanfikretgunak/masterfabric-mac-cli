@@ -18,6 +18,12 @@ install: release
 	cp -f .build/release/MasterFabricMenuBar "$(APP_DIR)/Contents/MacOS/MasterFabricMenuBar"
 	cp -f .build/release/MasterFabricMenuBar "$(BIN_DIR)/MasterFabricMenuBar"
 	chmod +x "$(BIN_DIR)/mf" "$(BIN_DIR)/MasterFabricMenuBar" "$(APP_DIR)/Contents/MacOS/MasterFabricMenuBar"
+	# macOS (esp. Tahoe+) kills unsigned binaries with SIGKILL — ad-hoc sign after copy
+	xattr -cr "$(BIN_DIR)/mf" "$(BIN_DIR)/MasterFabricMenuBar" "$(APP_DIR)" 2>/dev/null || true
+	codesign --force --sign - "$(BIN_DIR)/mf"
+	codesign --force --sign - "$(BIN_DIR)/MasterFabricMenuBar"
+	codesign --force --sign - "$(APP_DIR)/Contents/MacOS/MasterFabricMenuBar"
+	codesign --force --deep --sign - "$(APP_DIR)"
 	@printf '%s\n' \
 	'<?xml version="1.0" encoding="UTF-8"?>' \
 	'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \

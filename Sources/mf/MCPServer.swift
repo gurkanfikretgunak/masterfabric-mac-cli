@@ -183,6 +183,18 @@ final class MCPServer {
                 ]
             ),
             tool(name: "get_about", description: "Product version and privacy statement."),
+            tool(
+                name: "notify_send",
+                description: "Send a message via Slack, Telegram, and/or mail integrations.",
+                properties: [
+                    "message": ["type": "string", "description": "Message body"],
+                    "channel": [
+                        "type": "string",
+                        "description": "slack | telegram | mail | all",
+                    ],
+                ]
+            ),
+            tool(name: "notify_status", description: "Show Slack/Telegram/mail integration status."),
         ]
     }
 
@@ -238,13 +250,28 @@ final class MCPServer {
             var c = ConfigStore.load()
             if let v = arguments["cpu_temp_celsius"] as? Double { c.alerts.cpuTempCelsius = v }
             if let v = arguments["cpu_temp_celsius"] as? Int { c.alerts.cpuTempCelsius = Double(v) }
+            if let v = arguments["gpu_temp_celsius"] as? Double { c.alerts.gpuTempCelsius = v }
+            if let v = arguments["gpu_temp_celsius"] as? Int { c.alerts.gpuTempCelsius = Double(v) }
             if let v = arguments["fan_near_max_percent"] as? Double { c.alerts.fanNearMaxPercent = v }
             if let v = arguments["fan_near_max_percent"] as? Int { c.alerts.fanNearMaxPercent = Double(v) }
+            if let v = arguments["disk_used_percent_max"] as? Double { c.alerts.diskUsedPercentMax = v }
+            if let v = arguments["disk_used_percent_max"] as? Int { c.alerts.diskUsedPercentMax = Double(v) }
+            if let v = arguments["battery_percent_min"] as? Double { c.alerts.batteryPercentMin = v }
+            if let v = arguments["battery_percent_min"] as? Int { c.alerts.batteryPercentMin = Double(v) }
             if let v = arguments["enabled"] as? Bool { c.alerts.enabled = v }
+            if let v = arguments["notify_integrations"] as? Bool { c.alerts.notifyIntegrations = v }
             try ConfigStore.save(c)
             return try JSONOutput.string(c)
         case "get_about":
             return AboutInfo.text()
+        case "notify_status":
+            return try JSONOutput.string(ConfigStore.load().integrations)
+        case "notify_send":
+            let message = arguments["message"] as? String ?? ""
+            let channelRaw = (arguments["channel"] as? String ?? "all").lowercased()
+            let channel = NotifyChannel(rawValue: channelRaw) ?? .all
+            let results = IntegrationNotifier.send(message, channel: channel)
+            return try JSONOutput.string(results)
         default:
             throw NSError(
                 domain: "MasterFabricMCP",

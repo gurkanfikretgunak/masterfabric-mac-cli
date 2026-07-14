@@ -25,6 +25,8 @@ struct MF: AsyncParsableCommand {
             Config.self,
             Login.self,
             Check.self,
+            Notify.self,
+            Bot.self,
             About.self,
             MenuBar.self,
             MCP.self,
@@ -219,7 +221,7 @@ extension MF {
 
         struct Set: ParsableCommand {
             static let configuration = CommandConfiguration(abstract: "Set a config key.")
-            @Argument(help: "Key (language|launch_at_login|poll_interval_seconds|alerts.cpu_temp_celsius|alerts.enabled|alerts.fan_near_max_percent|alerts.memory_pressure_notify)")
+            @Argument(help: "Key (language|…|integrations.slack.enabled|integrations.slack.webhook_url|integrations.telegram.*|integrations.mail.*)")
             var key: String
             @Argument(help: "Value")
             var value: String
@@ -233,12 +235,68 @@ extension MF {
                     c.pollIntervalSeconds = Double(value) ?? c.pollIntervalSeconds
                 case "alerts.enabled":
                     c.alerts.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.notify_integrations":
+                    c.alerts.notifyIntegrations = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.notify_cooldown_seconds":
+                    c.alerts.notifyCooldownSeconds = Double(value) ?? c.alerts.notifyCooldownSeconds
+                case "alerts.cpu_temp_enabled":
+                    c.alerts.cpuTempEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "alerts.cpu_temp_celsius":
                     c.alerts.cpuTempCelsius = Double(value) ?? c.alerts.cpuTempCelsius
+                case "alerts.gpu_temp_enabled":
+                    c.alerts.gpuTempEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.gpu_temp_celsius":
+                    c.alerts.gpuTempCelsius = Double(value) ?? c.alerts.gpuTempCelsius
+                case "alerts.fan_enabled":
+                    c.alerts.fanEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "alerts.fan_near_max_percent":
                     c.alerts.fanNearMaxPercent = Double(value) ?? c.alerts.fanNearMaxPercent
                 case "alerts.memory_pressure_notify":
                     c.alerts.memoryPressureNotify = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.disk_enabled":
+                    c.alerts.diskEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.disk_used_percent_max":
+                    c.alerts.diskUsedPercentMax = Double(value) ?? c.alerts.diskUsedPercentMax
+                case "alerts.battery_enabled":
+                    c.alerts.batteryEnabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.battery_percent_min":
+                    c.alerts.batteryPercentMin = Double(value) ?? c.alerts.batteryPercentMin
+                case "alerts.low_power_mode_notify":
+                    c.alerts.lowPowerModeNotify = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "integrations.slack.enabled":
+                    c.integrations.slack.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "integrations.slack.webhook_url":
+                    c.integrations.slack.webhookURL = value
+                case "integrations.telegram.enabled":
+                    c.integrations.telegram.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "integrations.telegram.bot_token":
+                    c.integrations.telegram.botToken = value
+                case "integrations.telegram.chat_id":
+                    c.integrations.telegram.chatID = value
+                case "integrations.mail.enabled":
+                    c.integrations.mail.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "integrations.mail.provider":
+                    c.integrations.mail.provider = value
+                case "integrations.mail.from":
+                    c.integrations.mail.from = value
+                case "integrations.mail.to":
+                    c.integrations.mail.to = value
+                case "integrations.mail.subject_prefix":
+                    c.integrations.mail.subjectPrefix = value
+                case "integrations.mail.smtp_host":
+                    c.integrations.mail.smtpHost = value
+                case "integrations.mail.smtp_port":
+                    c.integrations.mail.smtpPort = Int(value) ?? c.integrations.mail.smtpPort
+                case "integrations.mail.smtp_username":
+                    c.integrations.mail.smtpUsername = value
+                case "integrations.mail.smtp_password":
+                    c.integrations.mail.smtpPassword = value
+                case "integrations.mail.smtp_use_tls":
+                    c.integrations.mail.smtpUseTLS = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "integrations.mail.api_key":
+                    c.integrations.mail.apiKey = value
+                case "integrations.mail.mailgun_domain":
+                    c.integrations.mail.mailgunDomain = value
                 default:
                     throw ValidationError("Unknown key: \(key)")
                 }
@@ -285,19 +343,143 @@ extension MF {
 
     struct Check: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Evaluate alert thresholds and print warnings.")
-        @Flag(name: .long, help: "Also post macOS notifications.")
+        @Flag(name: .long, help: "Deliver via Slack/Telegram/mail (and macOS banner when running as .app).")
         var notify: Bool = false
+        @OptionGroup var format: JSONFlagOptions
         func run() throws {
             let status = StatusService.current()
             let memory = MemoryService.current()
             let alerts = AlertService.evaluate(status: status, memory: memory)
+            var delivered: [NotifyDeliveryResult] = []
+            if notify, !alerts.isEmpty {
+                delivered = IntegrationNotifier.deliverAlerts(alerts)
+            }
+            if format.json {
+                struct Payload: Encodable {
+                    let alerts: [String]
+                    let delivered: [NotifyDeliveryResult]
+                }
+                print(try JSONOutput.string(Payload(alerts: alerts, delivered: delivered)))
+                return
+            }
             if alerts.isEmpty {
                 print("OK — no alerts")
             } else {
                 alerts.forEach { print("• \($0)") }
             }
             if notify {
-                AlertService.notifyIfNeeded(status: status, memory: memory)
+                print("")
+                if alerts.isEmpty {
+                    print("Nothing to deliver")
+                } else {
+                    print(TextFormat.notifyResults(delivered))
+                }
+            }
+        }
+    }
+
+    struct Notify: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Send a message or test alerts via Slack, Telegram, or mail.",
+            subcommands: [Send.self, Test.self, Status.self],
+            defaultSubcommand: Status.self
+        )
+
+        struct Status: ParsableCommand {
+            static let configuration = CommandConfiguration(abstract: "Show integration configuration status.")
+            @OptionGroup var format: JSONFlagOptions
+            func run() throws {
+                let c = ConfigStore.load().integrations
+                if format.json {
+                    print(try JSONOutput.string(c))
+                } else {
+                    let listed = c.listedKinds.isEmpty ? "none" : c.listedKinds.joined(separator: ", ")
+                    print("""
+                    Slack:    enabled=\(c.slack.enabled) configured=\(c.slack.isConfigured)
+                    Telegram: enabled=\(c.telegram.enabled) configured=\(c.telegram.isConfigured)
+                    Mail:     enabled=\(c.mail.enabled) provider=\(c.mail.provider) configured=\(c.mail.isConfigured)
+                    Listed:   \(listed)
+                    Config:   \(ConfigStore.configURL.path)
+                    """)
+                }
+            }
+        }
+
+        struct Send: ParsableCommand {
+            static let configuration = CommandConfiguration(abstract: "Send a custom message to a channel.")
+            @Option(name: .shortAndLong, help: "Channel: slack | telegram | mail | all")
+            var channel: String = "all"
+            @Argument(help: "Message text")
+            var message: String
+            @OptionGroup var format: JSONFlagOptions
+            func run() throws {
+                guard let ch = NotifyChannel(rawValue: channel.lowercased()) else {
+                    throw ValidationError("channel must be slack, telegram, mail, or all")
+                }
+                let results = IntegrationNotifier.send(message, channel: ch)
+                if format.json {
+                    print(try JSONOutput.string(results))
+                } else {
+                    print(TextFormat.notifyResults(results))
+                }
+                if results.contains(where: { !$0.ok }) {
+                    throw ExitCode.failure
+                }
+            }
+        }
+
+        struct Test: ParsableCommand {
+            static let configuration = CommandConfiguration(abstract: "Send a test message to configured channels.")
+            @Option(name: .shortAndLong, help: "Channel: slack | telegram | mail | all")
+            var channel: String = "all"
+            @OptionGroup var format: JSONFlagOptions
+            func run() throws {
+                guard let ch = NotifyChannel(rawValue: channel.lowercased()) else {
+                    throw ValidationError("channel must be slack, telegram, mail, or all")
+                }
+                let host = SystemInfoService.current().model
+                let msg = "MasterFabric test notification from \(host) at \(ISO8601DateFormatter().string(from: Date()))"
+                let results = IntegrationNotifier.send(msg, channel: ch)
+                if format.json {
+                    print(try JSONOutput.string(results))
+                } else {
+                    print(TextFormat.notifyResults(results))
+                }
+                if results.contains(where: { !$0.ok }) {
+                    throw ExitCode.failure
+                }
+            }
+        }
+    }
+
+    struct Bot: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Run interactive bots that answer with live Mac metrics.",
+            subcommands: [Telegram.self],
+            defaultSubcommand: Telegram.self
+        )
+
+        struct Telegram: ParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Long-poll Telegram: reply to /status, /temp, questions, etc. with machine data."
+            )
+
+            @Option(name: .long, help: "Extra allowed chat_id (numeric). Can repeat.")
+            var allowChat: [Int] = []
+
+            func run() throws {
+                var options = try TelegramBotService.optionsFromConfig()
+                for id in allowChat {
+                    options.allowedChatIDs.insert(id)
+                }
+                guard !options.allowedChatIDs.isEmpty else {
+                    throw ValidationError(
+                        "Set a numeric chat_id first:\n  mf config set integrations.telegram.chat_id \"123456789\"\nThen: mf bot telegram"
+                    )
+                }
+                print("Starting Telegram bot (Ctrl+C to stop)…")
+                fflush(stdout)
+                try TelegramBotService.run(options: options)
             }
         }
     }

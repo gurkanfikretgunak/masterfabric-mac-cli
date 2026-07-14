@@ -50,7 +50,7 @@ public enum ConfigStore {
             }
             guard parts.count == 2 else { continue }
             let key = parts[0]
-            let value = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            let value = stripQuotes(parts[1])
 
             if section.isEmpty || section == "general" {
                 switch key {
@@ -62,9 +62,52 @@ public enum ConfigStore {
             } else if section == "alerts" {
                 switch key {
                 case "enabled": config.alerts.enabled = value == "true"
+                case "notify_integrations": config.alerts.notifyIntegrations = value == "true"
+                case "notify_cooldown_seconds":
+                    config.alerts.notifyCooldownSeconds = Double(value) ?? config.alerts.notifyCooldownSeconds
+                case "cpu_temp_enabled": config.alerts.cpuTempEnabled = value == "true"
                 case "cpu_temp_celsius": config.alerts.cpuTempCelsius = Double(value) ?? config.alerts.cpuTempCelsius
+                case "gpu_temp_enabled": config.alerts.gpuTempEnabled = value == "true"
+                case "gpu_temp_celsius": config.alerts.gpuTempCelsius = Double(value) ?? config.alerts.gpuTempCelsius
+                case "fan_enabled": config.alerts.fanEnabled = value == "true"
                 case "fan_near_max_percent": config.alerts.fanNearMaxPercent = Double(value) ?? config.alerts.fanNearMaxPercent
                 case "memory_pressure_notify": config.alerts.memoryPressureNotify = value == "true"
+                case "disk_enabled": config.alerts.diskEnabled = value == "true"
+                case "disk_used_percent_max":
+                    config.alerts.diskUsedPercentMax = Double(value) ?? config.alerts.diskUsedPercentMax
+                case "battery_enabled": config.alerts.batteryEnabled = value == "true"
+                case "battery_percent_min":
+                    config.alerts.batteryPercentMin = Double(value) ?? config.alerts.batteryPercentMin
+                case "low_power_mode_notify": config.alerts.lowPowerModeNotify = value == "true"
+                default: break
+                }
+            } else if section == "integrations.slack" {
+                switch key {
+                case "enabled": config.integrations.slack.enabled = value == "true"
+                case "webhook_url": config.integrations.slack.webhookURL = value
+                default: break
+                }
+            } else if section == "integrations.telegram" {
+                switch key {
+                case "enabled": config.integrations.telegram.enabled = value == "true"
+                case "bot_token": config.integrations.telegram.botToken = value
+                case "chat_id": config.integrations.telegram.chatID = value
+                default: break
+                }
+            } else if section == "integrations.mail" {
+                switch key {
+                case "enabled": config.integrations.mail.enabled = value == "true"
+                case "provider": config.integrations.mail.provider = value
+                case "from": config.integrations.mail.from = value
+                case "to": config.integrations.mail.to = value
+                case "subject_prefix": config.integrations.mail.subjectPrefix = value
+                case "smtp_host": config.integrations.mail.smtpHost = value
+                case "smtp_port": config.integrations.mail.smtpPort = Int(value) ?? config.integrations.mail.smtpPort
+                case "smtp_username": config.integrations.mail.smtpUsername = value
+                case "smtp_password": config.integrations.mail.smtpPassword = value
+                case "smtp_use_tls": config.integrations.mail.smtpUseTLS = value == "true"
+                case "api_key": config.integrations.mail.apiKey = value
+                case "mailgun_domain": config.integrations.mail.mailgunDomain = value
                 default: break
                 }
             }
@@ -72,21 +115,73 @@ public enum ConfigStore {
         return config
     }
 
+    private static func stripQuotes(_ raw: String) -> String {
+        var v = raw.trimmingCharacters(in: .whitespaces)
+        if v.hasPrefix("\""), v.hasSuffix("\""), v.count >= 2 {
+            v.removeFirst()
+            v.removeLast()
+            v = v.replacingOccurrences(of: "\\\"", with: "\"")
+        }
+        return v
+    }
+
+    private static func escapeTOML(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     private static func renderTOML(_ config: AppConfig) -> String {
-        """
+        let s = config.integrations.slack
+        let t = config.integrations.telegram
+        let m = config.integrations.mail
+        return """
         # MasterFabric configuration
         # https://github.com/gurkanfikretgunak/masterfabric-mac-cli
 
         [general]
-        language = "\(config.language)"
+        language = "\(escapeTOML(config.language))"
         launch_at_login = \(config.launchAtLogin)
         poll_interval_seconds = \(config.pollIntervalSeconds)
 
         [alerts]
         enabled = \(config.alerts.enabled)
+        notify_integrations = \(config.alerts.notifyIntegrations)
+        notify_cooldown_seconds = \(config.alerts.notifyCooldownSeconds)
+        cpu_temp_enabled = \(config.alerts.cpuTempEnabled)
         cpu_temp_celsius = \(config.alerts.cpuTempCelsius)
+        gpu_temp_enabled = \(config.alerts.gpuTempEnabled)
+        gpu_temp_celsius = \(config.alerts.gpuTempCelsius)
+        fan_enabled = \(config.alerts.fanEnabled)
         fan_near_max_percent = \(config.alerts.fanNearMaxPercent)
         memory_pressure_notify = \(config.alerts.memoryPressureNotify)
+        disk_enabled = \(config.alerts.diskEnabled)
+        disk_used_percent_max = \(config.alerts.diskUsedPercentMax)
+        battery_enabled = \(config.alerts.batteryEnabled)
+        battery_percent_min = \(config.alerts.batteryPercentMin)
+        low_power_mode_notify = \(config.alerts.lowPowerModeNotify)
+
+        [integrations.slack]
+        enabled = \(s.enabled)
+        webhook_url = "\(escapeTOML(s.webhookURL))"
+
+        [integrations.telegram]
+        enabled = \(t.enabled)
+        bot_token = "\(escapeTOML(t.botToken))"
+        chat_id = "\(escapeTOML(t.chatID))"
+
+        [integrations.mail]
+        enabled = \(m.enabled)
+        provider = "\(escapeTOML(m.provider))"
+        from = "\(escapeTOML(m.from))"
+        to = "\(escapeTOML(m.to))"
+        subject_prefix = "\(escapeTOML(m.subjectPrefix))"
+        smtp_host = "\(escapeTOML(m.smtpHost))"
+        smtp_port = \(m.smtpPort)
+        smtp_username = "\(escapeTOML(m.smtpUsername))"
+        smtp_password = "\(escapeTOML(m.smtpPassword))"
+        smtp_use_tls = \(m.smtpUseTLS)
+        api_key = "\(escapeTOML(m.apiKey))"
+        mailgun_domain = "\(escapeTOML(m.mailgunDomain))"
         """
     }
 }

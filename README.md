@@ -102,7 +102,7 @@ Homebrew formula (tap after tagging a release): [`Formula/masterfabric.rb`](Form
 
 ## Menu Bar
 
-Live status item (English UI): **CPU °C · load% · Fan RPM**. Click for model, GPU, battery, memory, thermal state, and CPU history sparkline.
+Live status item (English UI): **CPU °C · load% · Fan RPM**. Click for model, GPU, battery, memory, thermal state, CPU history, and an **Integrations** section with a **+** button to add Slack / Telegram / Mail from the panel.
 
 ![MasterFabric menu bar](docs/screenshots/menubar.png)
 
@@ -111,7 +111,7 @@ mf menubar          # launch
 mf login enable     # start at login
 ```
 
-App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon).
+App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon). Use **+** in the panel to configure notification channels without the terminal.
 
 ---
 
@@ -122,6 +122,8 @@ mf status | temp | fan | info
 mf battery | memory | disk | network | cpu
 mf power | top | history | watch
 mf check [--notify]
+mf notify status | test | send --channel slack "hello"
+mf bot telegram
 mf config show | init | set <key> <value>
 mf login enable | disable | status
 mf about [--lang en|tr]
@@ -130,6 +132,63 @@ mf mcp
 ```
 
 All read commands support `--json`.
+
+---
+
+## Integrations — Slack · Telegram · Mail
+
+Push alerts (or any message) to chat/email from the CLI or MCP.
+
+```bash
+mf config init
+mf config set integrations.slack.enabled true
+mf config set integrations.slack.webhook_url "https://hooks.slack.com/services/…"
+
+mf config set integrations.telegram.enabled true
+mf config set integrations.telegram.bot_token "123:ABC"
+mf config set integrations.telegram.chat_id "987654321"
+
+mf config set integrations.mail.enabled true
+mf config set integrations.mail.provider resend   # or smtp | mailgun
+mf config set integrations.mail.from "alerts@example.com"
+mf config set integrations.mail.to "you@example.com"
+mf config set integrations.mail.api_key "re_xxx"
+
+mf notify test --channel all
+mf check --notify
+mf notify send --channel slack "CPU spike on build machine"
+```
+
+Full sample: [examples/integrations.toml](examples/integrations.toml)
+
+| Channel | Config |
+|---------|--------|
+| **Slack** | Incoming webhook URL |
+| **Telegram** | Bot token + chat id |
+| **Mail** | `resend` / `mailgun` API key, or `smtp` (via `python3` smtplib) |
+
+MCP tools: `notify_send`, `notify_status`.
+
+### Telegram interactive bot (Q&A)
+
+Keep a process running on the Mac so the bot can answer questions with live metrics:
+
+```bash
+mf bot telegram
+```
+
+Then in Telegram:
+
+```text
+/status
+/temp
+/fan
+/battery
+how's the fan?
+cpu load?
+```
+
+Only the configured numeric `chat_id` is allowed. Ctrl+C stops the listener.
 
 ---
 

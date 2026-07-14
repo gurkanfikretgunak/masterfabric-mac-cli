@@ -176,15 +176,33 @@ public enum TextFormat {
     }
 
     public static func config(_ c: AppConfig) -> String {
-        """
+        let s = c.integrations.slack
+        let t = c.integrations.telegram
+        let m = c.integrations.mail
+        return """
         language:              \(c.language)
         launch_at_login:       \(c.launchAtLogin)
         poll_interval_seconds: \(c.pollIntervalSeconds)
         alerts.enabled:        \(c.alerts.enabled)
-        alerts.cpu_temp_c:     \(c.alerts.cpuTempCelsius)
-        alerts.fan_near_max_%: \(c.alerts.fanNearMaxPercent)
+        alerts.notify_integrations: \(c.alerts.notifyIntegrations)
+        alerts.cpu_temp:       \(c.alerts.cpuTempEnabled) ≥ \(c.alerts.cpuTempCelsius)°C
+        alerts.gpu_temp:       \(c.alerts.gpuTempEnabled) ≥ \(c.alerts.gpuTempCelsius)°C
+        alerts.fan_near_max:   \(c.alerts.fanEnabled) ≥ \(c.alerts.fanNearMaxPercent)%
         alerts.memory_notify:  \(c.alerts.memoryPressureNotify)
+        alerts.disk:           \(c.alerts.diskEnabled) ≥ \(c.alerts.diskUsedPercentMax)%
+        alerts.battery:        \(c.alerts.batteryEnabled) ≤ \(c.alerts.batteryPercentMin)%
+        alerts.low_power:      \(c.alerts.lowPowerModeNotify)
+        slack.enabled:         \(s.enabled)  configured=\(s.isConfigured)
+        telegram.enabled:      \(t.enabled)  configured=\(t.isConfigured)
+        mail.enabled:          \(m.enabled)  provider=\(m.provider) configured=\(m.isConfigured)
         path: \(ConfigStore.configURL.path)
         """
+    }
+
+    public static func notifyResults(_ results: [NotifyDeliveryResult]) -> String {
+        if results.isEmpty { return "No deliveries" }
+        return results.map { r in
+            "\(r.ok ? "✓" : "✗") \(r.channel): \(r.detail)"
+        }.joined(separator: "\n")
     }
 }
