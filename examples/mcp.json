@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "masterfabric": {
+      "command": "/Users/YOUR_USER/.local/bin/mf",
+      "args": ["mcp"]
+    }
+  }
+}
