@@ -300,7 +300,6 @@ struct IntegrationsSection: View {
 
 struct AddIntegrationSheet: View {
     @ObservedObject var model: MenuBarModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var kind: IntegrationKind = .slack
     @State private var enabled = true
@@ -333,13 +332,12 @@ struct AddIntegrationSheet: View {
                 Text("Add integration")
                     .font(.headline)
                 Spacer()
-                Button {
-                    dismiss()
-                } label: {
+                Button(action: close) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
+                .help("Close")
             }
 
             Picker("Channel", selection: $kind) {
@@ -396,9 +394,12 @@ struct AddIntegrationSheet: View {
             HStack {
                 Button("Test") { test() }
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save") { save(); dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                Button("Cancel", action: close)
+                Button("Save") {
+                    save()
+                    close()
+                }
+                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(16)
@@ -412,13 +413,18 @@ struct AddIntegrationSheet: View {
         }
     }
 
+    /// MenuBarExtra sheets often ignore Environment.dismiss on the first click —
+    /// drive dismissal via the isPresented binding instead.
+    private func close() {
+        model.showAddIntegration = false
+    }
+
     /// When adding: only unconfigured channels. When editing an existing one: keep that channel visible.
     private var pickerKinds: [IntegrationKind] {
         var kinds = model.availableToAdd
         if model.isConfigured(model.editingKind), !kinds.contains(model.editingKind) {
             kinds.insert(model.editingKind, at: 0)
         }
-        // Stable order
         return IntegrationKind.allCases.filter { kinds.contains($0) }
     }
 
