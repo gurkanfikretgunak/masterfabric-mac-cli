@@ -527,6 +527,18 @@ struct AboutSection: View {
             .buttonStyle(.borderless)
             .font(.caption)
 
+            Button("Update from GitHub") {
+                model.lastNotifyMessage = "Updating from GitHub…"
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let result = UpdateService.update(force: false)
+                    DispatchQueue.main.async {
+                        model.lastNotifyMessage = UpdateService.format(result)
+                    }
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+
             HStack(spacing: 4) {
                 Text("Author")
                     .font(.caption)

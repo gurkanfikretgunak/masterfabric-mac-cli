@@ -2,7 +2,7 @@ import Foundation
 
 /// Single source of truth for the product version (keep in sync with root `VERSION`).
 public enum AppVersion {
-    public static let current = "0.4.0"
+    public static let current = "0.4.1"
     public static let repoOwner = "gurkanfikretgunak"
     public static let repoName = "masterfabric-mac-cli"
     public static var repoURL: String { "https://github.com/\(repoOwner)/\(repoName)" }
@@ -120,7 +120,8 @@ public enum VersionService {
         lines.append(result.detail)
         if result.updateAvailable {
             lines.append("Update: \(result.releasesURL)")
-            lines.append("Or: curl -fsSL \(AppVersion.repoURL)/raw/main/scripts/install.sh | bash")
+            lines.append("Run:    mf update")
+            lines.append("Or:     curl -fsSL \(AppVersion.repoURL)/raw/main/scripts/install.sh | bash")
         }
         return lines.joined(separator: "\n")
     }
@@ -217,6 +218,96 @@ public enum VersionService {
                 return "HTTP \(code): \(body.prefix(200))"
             }
         }
+    }
+}
+
+/// Install / upgrade from the open-source GitHub repo via `scripts/install.sh`.
+public enum UpdateService {
+    public static var installScriptURL: String {
+        "\(AppVersion.repoURL)/raw/main/scripts/install.sh"
+    }
+
+    public struct Result: Sendable {
+        public var performed: Bool
+        public var localBefore: String
+        public var check: VersionCheckResult
+        public var output: String
+        public var detail: String
+    }
+
+    /// Check GitHub; if newer (or `force`), run the official install script.
+    public static func update(force: Bool = false, prefix: String? = nil) -> Result {
+        let before = AppVersion.current
+        let check = VersionService.check(local: before)
+        if !force, !check.updateAvailable {
+            return Result(
+                performed: false,
+                localBefore: before,
+                check: check,
+                output: "",
+                detail: check.remote == nil
+                    ? check.detail
+                    : "Already on latest (local v\(before), GitHub v\(check.remote ?? "?")). Use --force to reinstall."
+            )
+        }
+
+        let envPrefix = prefix ?? (ProcessInfo.processInfo.environment["MASTERFABRIC_PREFIX"] ?? "\(NSHomeDirectory())/.local")
+        let script = """
+        set -euo pipefail
+        export MASTERFABRIC_PREFIX="\(envPrefix)"
+        curl -fsSL "\(installScriptURL)" | bash
+        """
+
+        do {
+            let output = try runShell(script)
+            return Result(
+                performed: true,
+                localBefore: before,
+                check: check,
+                output: output,
+                detail: "Update finished. Open a new terminal and run: mf version"
+            )
+        } catch {
+            return Result(
+                performed: false,
+                localBefore: before,
+                check: check,
+                output: "",
+                detail: "Update failed: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    public static func format(_ result: Result) -> String {
+        var lines = [VersionService.format(result.check), "", result.detail]
+        if !result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("")
+            lines.append(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func runShell(_ script: String) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-lc", script]
+        let out = Pipe()
+        let err = Pipe()
+        process.standardOutput = out
+        process.standardError = err
+        try process.run()
+        process.waitUntilExit()
+        let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let combined = (stdout + stderr).trimmingCharacters(in: .whitespacesAndNewlines)
+        if process.terminationStatus != 0 {
+            throw NSError(
+                domain: "MasterFabricUpdate",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: combined.isEmpty ? "install.sh failed" : combined]
+            )
+        }
+        return combined
     }
 }
 

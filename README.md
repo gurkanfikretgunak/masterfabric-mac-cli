@@ -151,6 +151,7 @@ mf check [--notify]
 mf notify status | test | send --channel slack "hello"
 mf bot telegram
 mf version [--check]
+mf update [--force]
 mf config show | init | set <key> <value>
 mf login enable | disable | status
 mf about [--lang en|tr]
@@ -245,6 +246,8 @@ Single source of truth: root [`VERSION`](VERSION) (synced into `AppVersion.curre
 mf version              # local
 mf version --check      # compare to GitHub releases/tags (open-source repo)
 mf version --check --json
+mf update               # install newer release from GitHub (scripts/install.sh)
+mf update --force       # reinstall even if already current
 ```
 
 Exit code `2` means an update is available. Install/update from source:

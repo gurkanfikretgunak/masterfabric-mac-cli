@@ -28,6 +28,7 @@ struct MF: AsyncParsableCommand {
             Notify.self,
             Bot.self,
             Version.self,
+            Update.self,
             About.self,
             MenuBar.self,
             MCP.self,
@@ -516,6 +517,31 @@ extension MF {
                 print("\(AboutInfo.product) v\(AppVersion.current)")
                 print("Repo: \(AppVersion.repoURL)")
                 print("Check updates: mf version --check")
+                print("Install update: mf update")
+            }
+        }
+    }
+
+    struct Update: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Upgrade from the open-source GitHub repo (runs scripts/install.sh)."
+        )
+
+        @Flag(name: .long, help: "Reinstall even when already up to date.")
+        var force: Bool = false
+
+        @Option(name: .long, help: "Install prefix (default: ~/.local).")
+        var prefix: String?
+
+        func run() throws {
+            print("Checking GitHub…")
+            let result = UpdateService.update(force: force, prefix: prefix)
+            print(UpdateService.format(result))
+            if result.performed == false, result.check.updateAvailable || force {
+                throw ExitCode.failure
+            }
+            if result.performed == false, result.check.source == "error" {
+                throw ExitCode.failure
             }
         }
     }
