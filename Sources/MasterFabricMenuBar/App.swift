@@ -21,6 +21,14 @@ struct MasterFabricMenuBarApp: App {
     }
 }
 
+enum IntegrationKind: String, CaseIterable, Identifiable {
+    case slack = "Slack"
+    case telegram = "Telegram"
+    case mail = "Mail"
+
+    var id: String { rawValue }
+}
+
 @MainActor
 final class MenuBarModel: ObservableObject {
     @Published var title: String = "mf…"
@@ -32,6 +40,11 @@ final class MenuBarModel: ObservableObject {
     @Published var power: PowerInfo = PowerService.current()
     @Published var history: HistorySnapshot = HistoryStore.snapshot()
     @Published var alerts: [String] = []
+    @Published var integrations: IntegrationsConfig = ConfigStore.load().integrations
+    @Published var lastNotifyMessage: String = ""
+
+    @Published var showAddIntegration = false
+    @Published var editingKind: IntegrationKind = .slack
 
     private var timer: Timer?
 
@@ -55,11 +68,75 @@ final class MenuBarModel: ObservableObject {
         load = CPULoadService.current()
         power = PowerService.current()
         history = HistoryStore.snapshot()
-        // Menu bar UI is English-first regardless of CLI language setting.
         var config = ConfigStore.load()
         config.language = "en"
         alerts = AlertService.evaluate(status: status, memory: memory, config: config)
+        integrations = config.integrations
         title = TextFormat.compactStatusBar(status, load: load)
+    }
+
+    func openAdd(kind: IntegrationKind? = nil) {
+        if let kind {
+            editingKind = kind
+        } else if !integrations.slack.isConfigured {
+            editingKind = .slack
+        } else if !integrations.telegram.isConfigured {
+            editingKind = .telegram
+        } else {
+            editingKind = .mail
+        }
+        showAddIntegration = true
+    }
+
+    func saveIntegrations(_ updated: IntegrationsConfig) {
+        var config = ConfigStore.load()
+        config.integrations = updated
+        do {
+            try ConfigStore.save(config)
+            integrations = updated
+            lastNotifyMessage = "Saved"
+        } catch {
+            lastNotifyMessage = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
+    func toggle(_ kind: IntegrationKind, enabled: Bool) {
+        var updated = integrations
+        switch kind {
+        case .slack: updated.slack.enabled = enabled
+        case .telegram: updated.telegram.enabled = enabled
+        case .mail: updated.mail.enabled = enabled
+        }
+        saveIntegrations(updated)
+    }
+
+    func test(_ kind: IntegrationKind) {
+        let channel: NotifyChannel
+        switch kind {
+        case .slack: channel = .slack
+        case .telegram: channel = .telegram
+        case .mail: channel = .mail
+        }
+        let msg = "MasterFabric menu bar test · \(info.model)"
+        let results = IntegrationNotifier.send(msg, channel: channel)
+        lastNotifyMessage = TextFormat.notifyResults(results)
+    }
+
+    func statusLabel(for kind: IntegrationKind) -> String {
+        switch kind {
+        case .slack:
+            if integrations.slack.isConfigured { return "On" }
+            if integrations.slack.enabled { return "Incomplete" }
+            return "Off"
+        case .telegram:
+            if integrations.telegram.isConfigured { return "On" }
+            if integrations.telegram.enabled { return "Incomplete" }
+            return "Off"
+        case .mail:
+            if integrations.mail.isConfigured { return "On · \(integrations.mail.provider)" }
+            if integrations.mail.enabled { return "Incomplete" }
+            return "Off"
+        }
     }
 }
 
@@ -114,12 +191,26 @@ struct MenuBarPanel: View {
 
             Divider()
 
+            IntegrationsSection(model: model)
+
+            if !model.lastNotifyMessage.isEmpty {
+                Text(model.lastNotifyMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
             Button("Refresh") { model.refresh() }
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         }
         .padding(14)
-        .frame(width: 300)
+        .frame(width: 320)
+        .sheet(isPresented: $model.showAddIntegration) {
+            AddIntegrationSheet(model: model)
+        }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -128,5 +219,241 @@ struct MenuBarPanel: View {
             Spacer()
             Text(value).font(.body.monospacedDigit())
         }
+    }
+}
+
+struct IntegrationsSection: View {
+    @ObservedObject var model: MenuBarModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Integrations")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    model.openAdd()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .imageScale(.medium)
+                }
+                .buttonStyle(.plain)
+                .help("Add or edit Slack, Telegram, or Mail")
+            }
+
+            ForEach(IntegrationKind.allCases) { kind in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(dotColor(for: kind))
+                        .frame(width: 7, height: 7)
+                    Text(kind.rawValue)
+                    Spacer()
+                    Text(model.statusLabel(for: kind))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Button("Edit") { model.openAdd(kind: kind) }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
+        }
+    }
+
+    private func dotColor(for kind: IntegrationKind) -> Color {
+        switch kind {
+        case .slack: return model.integrations.slack.isConfigured ? .green : .secondary.opacity(0.4)
+        case .telegram: return model.integrations.telegram.isConfigured ? .green : .secondary.opacity(0.4)
+        case .mail: return model.integrations.mail.isConfigured ? .green : .secondary.opacity(0.4)
+        }
+    }
+}
+
+struct AddIntegrationSheet: View {
+    @ObservedObject var model: MenuBarModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var kind: IntegrationKind = .slack
+    @State private var enabled = true
+
+    // Slack
+    @State private var webhookURL = ""
+
+    // Telegram
+    @State private var botToken = ""
+    @State private var chatID = ""
+
+    // Mail
+    @State private var provider = "resend"
+    @State private var from = ""
+    @State private var to = ""
+    @State private var subjectPrefix = "[MasterFabric]"
+    @State private var smtpHost = ""
+    @State private var smtpPort = "587"
+    @State private var smtpUsername = ""
+    @State private var smtpPassword = ""
+    @State private var smtpUseTLS = true
+    @State private var apiKey = ""
+    @State private var mailgunDomain = ""
+
+    @State private var feedback = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Add integration")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Picker("Channel", selection: $kind) {
+                ForEach(IntegrationKind.allCases) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: kind) { newValue in
+                load(from: newValue)
+            }
+
+            Toggle("Enabled", isOn: $enabled)
+
+            Group {
+                switch kind {
+                case .slack:
+                    field("Webhook URL", text: $webhookURL, secure: false)
+                case .telegram:
+                    field("Bot token", text: $botToken, secure: true)
+                    field("Chat ID", text: $chatID, secure: false)
+                case .mail:
+                    Picker("Provider", selection: $provider) {
+                        Text("Resend").tag("resend")
+                        Text("Mailgun").tag("mailgun")
+                        Text("SMTP").tag("smtp")
+                    }
+                    field("From", text: $from, secure: false)
+                    field("To", text: $to, secure: false)
+                    field("Subject prefix", text: $subjectPrefix, secure: false)
+                    if provider == "smtp" {
+                        field("SMTP host", text: $smtpHost, secure: false)
+                        field("SMTP port", text: $smtpPort, secure: false)
+                        field("Username", text: $smtpUsername, secure: false)
+                        field("Password", text: $smtpPassword, secure: true)
+                        Toggle("Use TLS", isOn: $smtpUseTLS)
+                    } else {
+                        field("API key", text: $apiKey, secure: true)
+                        if provider == "mailgun" {
+                            field("Mailgun domain", text: $mailgunDomain, secure: false)
+                        }
+                    }
+                }
+            }
+
+            if !feedback.isEmpty {
+                Text(feedback)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Button("Test") { test() }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { save(); dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 360)
+        .onAppear {
+            kind = model.editingKind
+            load(from: kind)
+        }
+    }
+
+    private func field(_ title: String, text: Binding<String>, secure: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if secure {
+                SecureField(title, text: text)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                TextField(title, text: text)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    private func load(from kind: IntegrationKind) {
+        let i = model.integrations
+        switch kind {
+        case .slack:
+            enabled = i.slack.enabled || i.slack.webhookURL.isEmpty
+            webhookURL = i.slack.webhookURL
+        case .telegram:
+            enabled = i.telegram.enabled || i.telegram.botToken.isEmpty
+            botToken = i.telegram.botToken
+            chatID = i.telegram.chatID
+        case .mail:
+            enabled = i.mail.enabled || i.mail.from.isEmpty
+            provider = i.mail.provider
+            from = i.mail.from
+            to = i.mail.to
+            subjectPrefix = i.mail.subjectPrefix
+            smtpHost = i.mail.smtpHost
+            smtpPort = String(i.mail.smtpPort)
+            smtpUsername = i.mail.smtpUsername
+            smtpPassword = i.mail.smtpPassword
+            smtpUseTLS = i.mail.smtpUseTLS
+            apiKey = i.mail.apiKey
+            mailgunDomain = i.mail.mailgunDomain
+        }
+        feedback = ""
+    }
+
+    private func save() {
+        var updated = model.integrations
+        switch kind {
+        case .slack:
+            updated.slack = SlackIntegrationConfig(enabled: enabled, webhookURL: webhookURL.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .telegram:
+            updated.telegram = TelegramIntegrationConfig(
+                enabled: enabled,
+                botToken: botToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                chatID: chatID.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        case .mail:
+            updated.mail = MailIntegrationConfig(
+                enabled: enabled,
+                provider: provider,
+                from: from.trimmingCharacters(in: .whitespacesAndNewlines),
+                to: to.trimmingCharacters(in: .whitespacesAndNewlines),
+                subjectPrefix: subjectPrefix,
+                smtpHost: smtpHost.trimmingCharacters(in: .whitespacesAndNewlines),
+                smtpPort: Int(smtpPort) ?? 587,
+                smtpUsername: smtpUsername,
+                smtpPassword: smtpPassword,
+                smtpUseTLS: smtpUseTLS,
+                apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+                mailgunDomain: mailgunDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        model.saveIntegrations(updated)
+        feedback = "Saved to config.toml"
+    }
+
+    private func test() {
+        save()
+        model.test(kind)
+        feedback = model.lastNotifyMessage
     }
 }

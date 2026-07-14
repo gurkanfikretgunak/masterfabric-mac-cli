@@ -102,7 +102,7 @@ Homebrew formula (tap after tagging a release): [`Formula/masterfabric.rb`](Form
 
 ## Menu Bar
 
-Live status item (English UI): **CPU °C · load% · Fan RPM**. Click for model, GPU, battery, memory, thermal state, and CPU history sparkline.
+Live status item (English UI): **CPU °C · load% · Fan RPM**. Click for model, GPU, battery, memory, thermal state, CPU history, and an **Integrations** section with a **+** button to add Slack / Telegram / Mail from the panel.
 
 ![MasterFabric menu bar](docs/screenshots/menubar.png)
 
@@ -111,7 +111,7 @@ mf menubar          # launch
 mf login enable     # start at login
 ```
 
-App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon).
+App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon). Use **+** in the panel to configure notification channels without the terminal.
 
 ---
 
