@@ -2,7 +2,7 @@ import Foundation
 
 /// Single source of truth for the product version (keep in sync with root `VERSION`).
 public enum AppVersion {
-    public static let current = "0.4.2"
+    public static let current = "0.4.3"
     public static let repoOwner = "gurkanfikretgunak"
     public static let repoName = "masterfabric-mac-cli"
     public static var repoURL: String { "https://github.com/\(repoOwner)/\(repoName)" }
@@ -230,42 +230,69 @@ public enum UpdateService {
     public struct Result: Sendable, Codable, Equatable {
         public var performed: Bool
         public var localBefore: String
+        public var localAfter: String?
         public var check: VersionCheckResult
         public var output: String
         public var detail: String
+        public var steps: [String]
 
         public init(
             performed: Bool,
             localBefore: String,
+            localAfter: String? = nil,
             check: VersionCheckResult,
             output: String,
-            detail: String
+            detail: String,
+            steps: [String] = []
         ) {
             self.performed = performed
             self.localBefore = localBefore
+            self.localAfter = localAfter
             self.check = check
             self.output = output
             self.detail = detail
+            self.steps = steps
         }
     }
 
     /// Check GitHub; if newer (or `force`), run the official install script.
-    public static func update(force: Bool = false, prefix: String? = nil) -> Result {
+    public static func update(
+        force: Bool = false,
+        prefix: String? = nil,
+        onStep: ((String) -> Void)? = nil
+    ) -> Result {
+        var steps: [String] = []
+        func step(_ message: String) {
+            steps.append(message)
+            onStep?(message)
+        }
+
         let before = AppVersion.current
+        step("checking_github")
         let check = VersionService.check(local: before)
+        if let remote = check.remote {
+            step("github_ok:\(remote)")
+        } else {
+            step("github_done:\(check.source)")
+        }
+
         if !force, !check.updateAvailable {
             return Result(
                 performed: false,
                 localBefore: before,
+                localAfter: before,
                 check: check,
                 output: "",
                 detail: check.remote == nil
                     ? check.detail
-                    : "Already on latest (local v\(before), GitHub v\(check.remote ?? "?")). Use --force to reinstall."
+                    : "Already on latest (local v\(before), GitHub v\(check.remote ?? "?")). Use --force to reinstall.",
+                steps: steps
             )
         }
 
-        let envPrefix = prefix ?? (ProcessInfo.processInfo.environment["MASTERFABRIC_PREFIX"] ?? "\(NSHomeDirectory())/.local")
+        let envPrefix = prefix
+            ?? (ProcessInfo.processInfo.environment["MASTERFABRIC_PREFIX"] ?? "\(NSHomeDirectory())/.local")
+        step("installing:\(envPrefix)")
         let script = """
         set -euo pipefail
         export MASTERFABRIC_PREFIX="\(envPrefix)"
@@ -274,31 +301,73 @@ public enum UpdateService {
 
         do {
             let output = try runShell(script)
+            step("install_finished")
+            let after = readInstalledVersion(prefix: envPrefix) ?? check.remote
+            step("verify:\(after ?? "unknown")")
+            let ok = after.map { VersionService.normalize($0) } ?? ""
+            let expected = check.remote.map { VersionService.normalize($0) } ?? ""
+            let verified = !ok.isEmpty && (expected.isEmpty || ok == expected || !VersionService.isRemoteNewer(remote: expected, local: ok))
             return Result(
                 performed: true,
                 localBefore: before,
+                localAfter: after,
                 check: check,
                 output: output,
-                detail: "Update finished. Open a new terminal and run: mf version"
+                detail: verified
+                    ? "Update OK: v\(before) → v\(after ?? "?")"
+                    : "Install finished but version verify unclear (before v\(before), after \(after ?? "unknown")). Run: \(envPrefix)/bin/mf version",
+                steps: steps
             )
         } catch {
+            step("install_failed")
             return Result(
                 performed: false,
                 localBefore: before,
+                localAfter: nil,
                 check: check,
                 output: "",
-                detail: "Update failed: \(error.localizedDescription)"
+                detail: "Update failed: \(error.localizedDescription)",
+                steps: steps
             )
         }
     }
 
     public static func format(_ result: Result) -> String {
         var lines = [VersionService.format(result.check), "", result.detail]
+        if let after = result.localAfter, result.performed {
+            lines.append("Installed binary: v\(after)")
+        }
+        if !result.steps.isEmpty {
+            lines.append("Steps: \(result.steps.joined(separator: " → "))")
+        }
         if !result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lines.append("")
             lines.append(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return lines.joined(separator: "\n")
+    }
+
+    private static func readInstalledVersion(prefix: String) -> String? {
+        let mf = "\(prefix)/bin/mf"
+        guard FileManager.default.isExecutableFile(atPath: mf) else { return nil }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: mf)
+        process.arguments = ["version", "--json"]
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let version = obj["version"] as? String
+            else { return nil }
+            return VersionService.normalize(version)
+        } catch {
+            return nil
+        }
     }
 
     private static func runShell(_ script: String) throws -> String {

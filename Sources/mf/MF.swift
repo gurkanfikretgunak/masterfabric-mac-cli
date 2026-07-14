@@ -538,8 +538,32 @@ extension MF {
         func run() throws {
             if !format.json {
                 print("Checking GitHub…")
+                fflush(stdout)
             }
-            let result = UpdateService.update(force: force, prefix: prefix)
+            let result = UpdateService.update(force: force, prefix: prefix) { step in
+                guard !format.json else { return }
+                switch step {
+                case "checking_github":
+                    break
+                case let s where s.hasPrefix("github_ok:"):
+                    print("GitHub latest: v\(s.dropFirst("github_ok:".count))")
+                    fflush(stdout)
+                case let s where s.hasPrefix("installing:"):
+                    print("Installing into \(s.dropFirst("installing:".count)) …")
+                    fflush(stdout)
+                case "install_finished":
+                    print("Install finished — verifying…")
+                    fflush(stdout)
+                case let s where s.hasPrefix("verify:"):
+                    print("Verified installed: v\(s.dropFirst("verify:".count))")
+                    fflush(stdout)
+                case "install_failed":
+                    print("Install failed.")
+                    fflush(stdout)
+                default:
+                    break
+                }
+            }
             if format.json {
                 print(try JSONOutput.string(result))
             } else {
