@@ -304,14 +304,28 @@ private struct MenuBarShot: View {
 
 private enum ShotBrandBadge {
     static var telegram: some View {
-        ZStack {
-            Circle()
-                .fill(Color(red: 34 / 255, green: 158 / 255, blue: 217 / 255))
-                .frame(width: 22, height: 22)
-            Image(systemName: "paperplane.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white)
-                .rotationEffect(.degrees(-20))
+        logo("brand-telegram")
+    }
+
+    static var slack: some View {
+        logo("brand-slack")
+    }
+
+    private static func logo(_ name: String) -> some View {
+        Group {
+            if let url = Bundle.module.url(forResource: name, withExtension: "png"),
+               let ns = NSImage(contentsOf: url)
+            {
+                Image(nsImage: ns)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 22, height: 22)
+                    .clipShape(Circle())
+            } else {
+                Circle()
+                    .fill(Color(red: 34 / 255, green: 158 / 255, blue: 217 / 255))
+                    .frame(width: 22, height: 22)
+            }
         }
     }
 }

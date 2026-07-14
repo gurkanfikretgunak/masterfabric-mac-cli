@@ -28,103 +28,80 @@ enum IntegrationKind: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Official brand circle background (Slack aubergine / Telegram blue / Mail).
+    /// Asset name for official logos (Slack / Telegram). Mail stays vector-drawn.
+    var brandImageName: String? {
+        switch self {
+        case .slack: return "brand-slack"
+        case .telegram: return "brand-telegram"
+        case .mail: return nil
+        }
+    }
+
     var brandCircleColor: Color {
         switch self {
         case .slack: return Color(red: 74 / 255, green: 21 / 255, blue: 75 / 255) // #4A154B
         case .telegram: return Color(red: 34 / 255, green: 158 / 255, blue: 217 / 255) // #229ED9
-        case .mail: return Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255) // system-mail blue
+        case .mail: return Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255)
         }
     }
 }
 
-/// Circle badge with simplified official brand marks (Slack octothorpe colors, Telegram plane).
+/// Circle badge using official Slack / Telegram logo assets (Mail stays drawn).
 struct IntegrationBrandBadge: View {
     let kind: IntegrationKind
     var size: CGFloat = 22
     var dimmed: Bool = false
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(kind.brandCircleColor)
-            mark
-                .frame(width: size * 0.58, height: size * 0.58)
+        Group {
+            if let name = kind.brandImageName, let nsImage = BrandAssets.nsImage(named: name) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(kind.brandCircleColor)
+                    MailEnvelopeMark()
+                        .frame(width: size * 0.58, height: size * 0.58)
+                }
+                .frame(width: size, height: size)
+            }
         }
-        .frame(width: size, height: size)
         .opacity(dimmed ? 0.45 : 1)
         .accessibilityLabel(kind.rawValue)
     }
-
-    @ViewBuilder
-    private var mark: some View {
-        switch kind {
-        case .slack:
-            SlackOctothorpeMark()
-        case .telegram:
-            TelegramPlaneMark()
-        case .mail:
-            MailEnvelopeMark()
-        }
-    }
 }
 
-/// Slack logo colors: blue / green / yellow / red lozenges forming #.
-private struct SlackOctothorpeMark: View {
-    private let blue = Color(red: 54 / 255, green: 197 / 255, blue: 240 / 255) // #36C5F0
-    private let green = Color(red: 46 / 255, green: 182 / 255, blue: 125 / 255) // #2EB67D
-    private let yellow = Color(red: 236 / 255, green: 178 / 255, blue: 46 / 255) // #ECB22E
-    private let red = Color(red: 224 / 255, green: 30 / 255, blue: 90 / 255) // #E01E5A
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let thick = w * 0.22
-            let gap = w * 0.12
-
-            ZStack {
-                // Vertical lozenges (rotated slightly like Slack #)
-                Capsule()
-                    .fill(blue)
-                    .frame(width: thick, height: h * 0.92)
-                    .offset(x: -gap)
-                Capsule()
-                    .fill(green)
-                    .frame(width: thick, height: h * 0.92)
-                    .offset(x: gap)
-                // Horizontal lozenges
-                Capsule()
-                    .fill(yellow)
-                    .frame(width: w * 0.92, height: thick)
-                    .offset(y: -gap)
-                Capsule()
-                    .fill(red)
-                    .frame(width: w * 0.92, height: thick)
-                    .offset(y: gap)
-            }
-            .rotationEffect(.degrees(12))
-            .frame(width: w, height: h)
+enum BrandAssets {
+    /// Resolves SPM `Bundle.module`, installed `.app` Resources, or sibling resource bundle.
+    static func nsImage(named name: String) -> NSImage? {
+        if let url = Bundle.module.url(forResource: name, withExtension: "png"),
+           let image = NSImage(contentsOf: url)
+        {
+            return image
         }
-    }
-}
-
-private struct TelegramPlaneMark: View {
-    var body: some View {
-        GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height)
-            Path { p in
-                // Simplified Telegram paper-plane silhouette
-                p.move(to: CGPoint(x: s * 0.08, y: s * 0.48))
-                p.addLine(to: CGPoint(x: s * 0.92, y: s * 0.18))
-                p.addLine(to: CGPoint(x: s * 0.48, y: s * 0.55))
-                p.addLine(to: CGPoint(x: s * 0.38, y: s * 0.82))
-                p.addLine(to: CGPoint(x: s * 0.48, y: s * 0.55))
-                p.addLine(to: CGPoint(x: s * 0.08, y: s * 0.48))
-                p.closeSubpath()
-            }
-            .fill(Color.white)
+        if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+           let image = NSImage(contentsOf: url)
+        {
+            return image
         }
+        // Installed app: Contents/Resources next to MacOS/
+        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let candidates = [
+            exe.deletingLastPathComponent().appendingPathComponent("../Resources/\(name).png"),
+            exe.deletingLastPathComponent().appendingPathComponent("\(name).png"),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".local/MasterFabricMenuBar.app/Contents/Resources/\(name).png"),
+        ]
+        for url in candidates {
+            let resolved = url.standardizedFileURL
+            if let image = NSImage(contentsOf: resolved) { return image }
+        }
+        return nil
     }
 }
 

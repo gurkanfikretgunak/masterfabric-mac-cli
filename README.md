@@ -1,11 +1,18 @@
 # MasterFabric Mac CLI
 
-> **Open source.** MacBook system monitor with a first-class **MCP** server — so Cursor, Claude, and any agent can read CPU/GPU temps, fans, battery, and more on your machine.
+<p align="center">
+  <img src="docs/brand/experimental-banner.png" alt="Experimental open-source disclaimer" width="100%">
+</p>
+
+> **Experimental open-source software.** Not affiliated with Slack, Telegram, Apple, or any third-party service. Sensors and configs stay on your Mac. **By using this tool you accept responsibility** for how you run it, what credentials you store, and any effects on your machine or connected accounts.
+
+> MacBook system monitor with a first-class **MCP** server — so Cursor, Claude, and any agent can read CPU/GPU temps, fans, battery, and more on your machine.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-black.svg)](https://github.com/gurkanfikretgunak/masterfabric-mac-cli)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20ready-6E56CF.svg)](https://github.com/gurkanfikretgunak/masterfabric-mac-cli#mcp--agent-ready)
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138.svg)](Package.swift)
+[![Status](https://img.shields.io/badge/status-experimental-red.svg)](README.md)
 
 **Repo:** [github.com/gurkanfikretgunak/masterfabric-mac-cli](https://github.com/gurkanfikretgunak/masterfabric-mac-cli)
 
@@ -155,7 +162,31 @@ All read commands support `--json`.
 
 ## Integrations — Slack · Telegram · Mail
 
-Push alerts (or any message) to chat/email from the CLI or MCP.
+Optional notification channels you configure yourself. MasterFabric is **not** an official product of these services.
+
+<p align="center">
+  <img src="docs/brand/slack.png" alt="Slack" width="72" height="72">
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/brand/telegram.png" alt="Telegram" width="72" height="72">
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/brand/mail.png" alt="Mail" width="72" height="72">
+</p>
+
+<p align="center">
+  <strong>Slack</strong>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <strong>Telegram</strong>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <strong>Mail</strong>
+</p>
+
+| | Channel | What you provide |
+|---|---------|------------------|
+| <img src="docs/brand/slack.png" width="28" height="28" alt="Slack"> | **Slack** | Incoming webhook URL |
+| <img src="docs/brand/telegram.png" width="28" height="28" alt="Telegram"> | **Telegram** | Bot token + numeric chat id |
+| <img src="docs/brand/mail.png" width="28" height="28" alt="Mail"> | **Mail** | `resend` / `mailgun` API key, or `smtp` |
+
+Push alerts (or any message) to chat/email from the CLI, menu bar, or MCP. Tokens stay in `~/.config/masterfabric/config.toml` — never commit them.
 
 ```bash
 mf config init
@@ -178,12 +209,6 @@ mf notify send --channel slack "CPU spike on build machine"
 ```
 
 Full sample: [examples/integrations.toml](examples/integrations.toml)
-
-| Channel | Config |
-|---------|--------|
-| **Slack** | Incoming webhook URL |
-| **Telegram** | Bot token + chat id |
-| **Mail** | `resend` / `mailgun` API key, or `smtp` (via `python3` smtplib) |
 
 MCP tools: `notify_send`, `notify_status`.
 

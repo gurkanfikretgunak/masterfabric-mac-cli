@@ -35,12 +35,21 @@ let package = Package(
             name: "MasterFabricMenuBar",
             dependencies: [
                 "MasterFabricCore",
+            ],
+            resources: [
+                .process("Resources"),
             ]
         ),
         .executableTarget(
             name: "GenerateScreenshot",
             dependencies: [
                 "MasterFabricCore",
+            ],
+            resources: [
+                .process("Resources"),
+            ],
+            swiftSettings: [
+                .unsafeFlags(["-parse-as-library"]),
             ]
         ),
     ]
