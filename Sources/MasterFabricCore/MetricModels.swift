@@ -286,13 +286,15 @@ public struct AppConfig: Sendable, Codable, Equatable {
     public var pollIntervalSeconds: Double
     public var alerts: AlertConfig
     public var integrations: IntegrationsConfig
+    public var menuBar: MenuBarDisplayConfig
 
     public static let `default` = AppConfig(
         language: "en",
         launchAtLogin: false,
         pollIntervalSeconds: 2.0,
         alerts: .default,
-        integrations: .default
+        integrations: .default,
+        menuBar: .default
     )
 
     public init(
@@ -300,12 +302,141 @@ public struct AppConfig: Sendable, Codable, Equatable {
         launchAtLogin: Bool,
         pollIntervalSeconds: Double,
         alerts: AlertConfig,
-        integrations: IntegrationsConfig = .default
+        integrations: IntegrationsConfig = .default,
+        menuBar: MenuBarDisplayConfig = .default
     ) {
         self.language = language
         self.launchAtLogin = launchAtLogin
         self.pollIntervalSeconds = pollIntervalSeconds
         self.alerts = alerts
         self.integrations = integrations
+        self.menuBar = menuBar
+    }
+}
+
+/// How the menu bar status item text is composed / drawn.
+public enum MenuBarStatusStyle: String, CaseIterable, Codable, Sendable, Identifiable {
+    case standard = "standard"
+    case tempOnly = "temp"
+    case fanOnly = "fan"
+    case capsule = "capsule"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .standard: return "Standard"
+        case .tempOnly: return "Temp only"
+        case .fanOnly: return "Fan only"
+        case .capsule: return "Capsule"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .standard: return "CPU · load · fan + A/F badge"
+        case .tempOnly: return "Just temperature, e.g. 52°"
+        case .fanOnly: return "Just fan RPM, e.g. 2400"
+        case .capsule: return "Pill background + metrics + badge"
+        }
+    }
+}
+
+/// Menu bar status-item + dropdown panel visibility.
+public struct MenuBarDisplayConfig: Sendable, Codable, Equatable {
+    public var style: MenuBarStatusStyle
+
+    // Status item (menu bar strip)
+    public var showCPUTemp: Bool
+    public var showGPUTemp: Bool
+    public var showLoad: Bool
+    public var showFanRPM: Bool
+    public var showFanBadge: Bool
+    public var showBattery: Bool
+
+    // Dropdown panel sections
+    public var panelModel: Bool
+    public var panelChip: Bool
+    public var panelCPU: Bool
+    public var panelGPU: Bool
+    public var panelLoad: Bool
+    public var panelThermal: Bool
+    public var panelFans: Bool
+    public var panelFanControl: Bool
+    public var panelBattery: Bool
+    public var panelMemory: Bool
+    public var panelCPUHist: Bool
+    public var panelAlerts: Bool
+    public var panelIntegrations: Bool
+    public var panelAbout: Bool
+
+    public static let `default` = MenuBarDisplayConfig(
+        style: .standard,
+        showCPUTemp: true,
+        showGPUTemp: false,
+        showLoad: true,
+        showFanRPM: true,
+        showFanBadge: true,
+        showBattery: false,
+        panelModel: true,
+        panelChip: true,
+        panelCPU: true,
+        panelGPU: true,
+        panelLoad: true,
+        panelThermal: true,
+        panelFans: true,
+        panelFanControl: true,
+        panelBattery: true,
+        panelMemory: true,
+        panelCPUHist: true,
+        panelAlerts: true,
+        panelIntegrations: true,
+        panelAbout: true
+    )
+
+    public init(
+        style: MenuBarStatusStyle,
+        showCPUTemp: Bool,
+        showGPUTemp: Bool,
+        showLoad: Bool,
+        showFanRPM: Bool,
+        showFanBadge: Bool,
+        showBattery: Bool,
+        panelModel: Bool,
+        panelChip: Bool,
+        panelCPU: Bool,
+        panelGPU: Bool,
+        panelLoad: Bool,
+        panelThermal: Bool,
+        panelFans: Bool,
+        panelFanControl: Bool,
+        panelBattery: Bool,
+        panelMemory: Bool,
+        panelCPUHist: Bool,
+        panelAlerts: Bool,
+        panelIntegrations: Bool,
+        panelAbout: Bool
+    ) {
+        self.style = style
+        self.showCPUTemp = showCPUTemp
+        self.showGPUTemp = showGPUTemp
+        self.showLoad = showLoad
+        self.showFanRPM = showFanRPM
+        self.showFanBadge = showFanBadge
+        self.showBattery = showBattery
+        self.panelModel = panelModel
+        self.panelChip = panelChip
+        self.panelCPU = panelCPU
+        self.panelGPU = panelGPU
+        self.panelLoad = panelLoad
+        self.panelThermal = panelThermal
+        self.panelFans = panelFans
+        self.panelFanControl = panelFanControl
+        self.panelBattery = panelBattery
+        self.panelMemory = panelMemory
+        self.panelCPUHist = panelCPUHist
+        self.panelAlerts = panelAlerts
+        self.panelIntegrations = panelIntegrations
+        self.panelAbout = panelAbout
     }
 }

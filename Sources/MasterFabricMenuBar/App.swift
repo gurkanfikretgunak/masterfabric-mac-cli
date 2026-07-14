@@ -28,11 +28,16 @@ struct MasterFabricMenuBarApp: App {
 
 /// Renders title + A/F pill as a bitmap. SwiftUI backgrounds are stripped from MenuBarExtra labels.
 enum MenuBarStatusIcon {
-    static func make(title: String, showBadge: Bool, isFull: Bool) -> NSImage {
+    static func make(
+        title: String,
+        showBadge: Bool,
+        isFull: Bool,
+        style: MenuBarStatusStyle = .standard
+    ) -> NSImage {
         let titleFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: style == .capsule ? NSColor.white : NSColor.labelColor,
         ]
         let titleSize = (title as NSString).size(withAttributes: titleAttrs)
 
@@ -45,22 +50,35 @@ enum MenuBarStatusIcon {
         let badgeTextSize = (badgeLetter as NSString).size(withAttributes: badgeAttrs)
         let badgeH: CGFloat = 13
         let badgeW: CGFloat = max(14, badgeTextSize.width + 8)
-        let gap: CGFloat = 5
-        let height: CGFloat = 18
-        let width = ceil(titleSize.width + (showBadge ? gap + badgeW : 0) + 2)
+        let gap: CGFloat = showBadge ? 5 : 0
+        let padX: CGFloat = style == .capsule ? 7 : 1
+        let padY: CGFloat = style == .capsule ? 2 : 0
+        let contentW = titleSize.width + (showBadge ? gap + badgeW : 0)
+        let height: CGFloat = style == .capsule ? 18 : 18
+        let width = ceil(contentW + padX * 2)
 
-        let size = NSSize(width: width, height: height)
+        let size = NSSize(width: max(width, 12), height: height + padY * 2)
         let image = NSImage(size: size, flipped: false) { _ in
-            let titleY = (height - titleSize.height) / 2
-            (title as NSString).draw(at: NSPoint(x: 0, y: titleY), withAttributes: titleAttrs)
+            if style == .capsule {
+                let capsule = NSBezierPath(
+                    roundedRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),
+                    xRadius: size.height / 2,
+                    yRadius: size.height / 2
+                )
+                NSColor(calibratedWhite: 0.22, alpha: 0.92).setFill()
+                capsule.fill()
+            }
+
+            let titleY = (size.height - titleSize.height) / 2
+            (title as NSString).draw(at: NSPoint(x: padX, y: titleY), withAttributes: titleAttrs)
 
             guard showBadge else { return true }
 
-            let bx = titleSize.width + gap
-            let by = (height - badgeH) / 2
+            let bx = padX + titleSize.width + gap
+            let by = (size.height - badgeH) / 2
             let fill = isFull
-                ? NSColor(calibratedRed: 0.20, green: 0.48, blue: 0.96, alpha: 1) // blue Full
-                : NSColor(calibratedRed: 0.18, green: 0.72, blue: 0.36, alpha: 1) // green Auto
+                ? NSColor(calibratedRed: 0.20, green: 0.48, blue: 0.96, alpha: 1)
+                : NSColor(calibratedRed: 0.18, green: 0.72, blue: 0.36, alpha: 1)
             let path = NSBezierPath(
                 roundedRect: NSRect(x: bx, y: by, width: badgeW, height: badgeH),
                 xRadius: 4,
@@ -251,6 +269,7 @@ final class MenuBarModel: ObservableObject {
     @Published var alerts: [String] = []
     @Published var alertConfig: AlertConfig = ConfigStore.load().alerts
     @Published var integrations: IntegrationsConfig = ConfigStore.load().integrations
+    @Published var displayConfig: MenuBarDisplayConfig = ConfigStore.load().menuBar
     @Published var lastNotifyMessage: String = ""
 
     /// Inline editor (not a sheet — MenuBarExtra sheets need two clicks to dismiss).
@@ -261,6 +280,8 @@ final class MenuBarModel: ObservableObject {
     @Published var showEditAlert = false
     @Published var editingAlertKind: AlertKind = .cpu
     @Published var alertEditorSession: Int = 0
+
+    @Published var showSettings = false
 
     /// Inline update prompt (avoid MenuBarExtra `.sheet` dismiss bugs).
     @Published var showUpdateDialog = false
@@ -286,8 +307,32 @@ final class MenuBarModel: ObservableObject {
         refreshMetrics()
     }
 
+    func openSettings() {
+        showSettings = true
+        showAddIntegration = false
+        showEditAlert = false
+        showUpdateDialog = false
+    }
+
+    func closeSettings() {
+        showSettings = false
+    }
+
+    func saveDisplayConfig(_ config: MenuBarDisplayConfig) {
+        displayConfig = config
+        var full = ConfigStore.load()
+        full.menuBar = config
+        do {
+            try ConfigStore.save(full)
+            lastNotifyMessage = "Menu bar settings saved"
+        } catch {
+            lastNotifyMessage = "Save failed: \(error.localizedDescription)"
+        }
+        applyStatusItem(from: full)
+    }
+
     private var isEditingInline: Bool {
-        showAddIntegration || showEditAlert || showUpdateDialog
+        showAddIntegration || showEditAlert || showUpdateDialog || showSettings
     }
 
     private func refreshMetrics() {
@@ -316,14 +361,8 @@ final class MenuBarModel: ObservableObject {
             config: config
         )
         integrations = config.integrations
-        title = TextFormat.compactStatusBar(status, load: load)
-        showFanBadge = !status.fans.isEmpty
-        fanIsFull = FanService.isFullMode(status.fans)
-        statusItemImage = MenuBarStatusIcon.make(
-            title: title,
-            showBadge: showFanBadge,
-            isFull: fanIsFull
-        )
+        displayConfig = config.menuBar
+        applyStatusItem(from: config)
 
         if config.alerts.notifyIntegrations, !alerts.isEmpty {
             let results = AlertService.notifyIfNeeded(
@@ -338,6 +377,33 @@ final class MenuBarModel: ObservableObject {
                 lastNotifyMessage = TextFormat.notifyResults(results)
             }
         }
+    }
+
+    func applyStatusItem(from config: AppConfig? = nil) {
+        let mb = config?.menuBar ?? displayConfig
+        title = TextFormat.compactStatusBar(
+            status,
+            load: load,
+            battery: battery,
+            display: mb
+        )
+        let fansPresent = !status.fans.isEmpty
+        fanIsFull = FanService.isFullMode(status.fans)
+        let badge: Bool = {
+            switch mb.style {
+            case .tempOnly, .fanOnly:
+                return false
+            case .standard, .capsule:
+                return mb.showFanBadge && fansPresent
+            }
+        }()
+        showFanBadge = badge
+        statusItemImage = MenuBarStatusIcon.make(
+            title: title,
+            showBadge: badge,
+            isFull: fanIsFull,
+            style: mb.style
+        )
     }
 
     func openAdd(kind: IntegrationKind? = nil) {
@@ -537,6 +603,8 @@ struct MenuBarPanel: View {
         Group {
             if model.showUpdateDialog {
                 UpdatePromptView(model: model)
+            } else if model.showSettings {
+                MenuBarSettingsView(model: model)
             } else if model.showEditAlert {
                 EditAlertForm(model: model)
                     .id(model.alertEditorSession)
@@ -548,7 +616,7 @@ struct MenuBarPanel: View {
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: model.showSettings ? 340 : 320)
     }
 }
 
@@ -608,6 +676,7 @@ struct UpdatePromptView: View {
 
 struct StatusHomeView: View {
     @ObservedObject var model: MenuBarModel
+    private var d: MenuBarDisplayConfig { model.displayConfig }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -631,76 +700,93 @@ struct StatusHomeView: View {
                 .help("Refresh metrics")
             }
 
-            Group {
-                row("Model", model.info.model)
-                row("Chip", model.info.chip)
-            }
-
-            Divider()
-
-            row("CPU", model.status.temperature.cpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
-            row("GPU", model.status.temperature.gpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
-            row("Load", String(format: "%.1f%%", model.load.overallPercent))
-            row("Thermal", model.power.thermalState)
-
-            if model.status.fans.isEmpty {
-                row("Fan", "N/A")
-            } else {
-                ForEach(Array(model.status.fans.enumerated()), id: \.offset) { _, fan in
-                    let rpm = fan.rpm.map { String(format: "%.0f", $0) } ?? "—"
-                    let max = fan.maxRPM.map { String(format: "%.0f", $0) } ?? "?"
-                    row(fan.name, "\(rpm)/\(max) · \(fan.mode)")
+            if d.panelModel || d.panelChip {
+                Group {
+                    if d.panelModel { row("Model", model.info.model) }
+                    if d.panelChip { row("Chip", model.info.chip) }
                 }
-                HStack(spacing: 8) {
-                    Text("Fan control")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if model.isChangingFanMode {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Button("Auto") {
-                        applyFanMode(.auto)
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .disabled(model.isChangingFanMode)
-                    .help("Automatic control — password only on first helper install")
-
-                    Button("Full") {
-                        applyFanMode(.full)
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .disabled(model.isChangingFanMode)
-                    .help("Max RPM — password only on first helper install")
-                }
+                Divider()
             }
 
-            Divider()
-
-            if model.battery.isPresent {
-                row("Battery", model.battery.percent.map { String(format: "%.0f%%", $0) } ?? "N/A")
+            if d.panelCPU {
+                row("CPU", model.status.temperature.cpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
             }
-            row("Memory", String(format: "%.0f%% · %@", model.memory.usedPercent, model.memory.pressure))
-            row("CPU hist", model.history.cpuSparkline)
+            if d.panelGPU {
+                row("GPU", model.status.temperature.gpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
+            }
+            if d.panelLoad {
+                row("Load", String(format: "%.1f%%", model.load.overallPercent))
+            }
+            if d.panelThermal {
+                row("Thermal", model.power.thermalState)
+            }
 
-            Divider()
+            if d.panelFans || d.panelFanControl {
+                if model.status.fans.isEmpty {
+                    if d.panelFans { row("Fan", "N/A") }
+                } else {
+                    if d.panelFans {
+                        ForEach(Array(model.status.fans.enumerated()), id: \.offset) { _, fan in
+                            let rpm = fan.rpm.map { String(format: "%.0f", $0) } ?? "—"
+                            let max = fan.maxRPM.map { String(format: "%.0f", $0) } ?? "?"
+                            row(fan.name, "\(rpm)/\(max) · \(fan.mode)")
+                        }
+                    }
+                    if d.panelFanControl, !model.status.fans.isEmpty {
+                        HStack(spacing: 8) {
+                            Text("Fan control")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if model.isChangingFanMode {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Button("Auto") { applyFanMode(.auto) }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .disabled(model.isChangingFanMode)
+                                .help("Automatic control — password only on first helper install")
 
-            AlertsSection(model: model)
-
-            if !model.alerts.isEmpty {
-                ForEach(model.alerts, id: \.self) { alert in
-                    Text(alert)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                            Button("Full") { applyFanMode(.full) }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .disabled(model.isChangingFanMode)
+                                .help("Max RPM — password only on first helper install")
+                        }
+                    }
                 }
             }
 
-            Divider()
+            if d.panelBattery || d.panelMemory || d.panelCPUHist {
+                Divider()
+                if d.panelBattery, model.battery.isPresent {
+                    row("Battery", model.battery.percent.map { String(format: "%.0f%%", $0) } ?? "N/A")
+                }
+                if d.panelMemory {
+                    row("Memory", String(format: "%.0f%% · %@", model.memory.usedPercent, model.memory.pressure))
+                }
+                if d.panelCPUHist {
+                    row("CPU hist", model.history.cpuSparkline)
+                }
+            }
 
-            IntegrationsSection(model: model)
+            if d.panelAlerts {
+                Divider()
+                AlertsSection(model: model)
+                if !model.alerts.isEmpty {
+                    ForEach(model.alerts, id: \.self) { alert in
+                        Text(alert)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+
+            if d.panelIntegrations {
+                Divider()
+                IntegrationsSection(model: model)
+            }
 
             if !model.lastNotifyMessage.isEmpty {
                 Text(model.lastNotifyMessage)
@@ -709,14 +795,26 @@ struct StatusHomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if d.panelAbout {
+                Divider()
+                AboutSection(model: model)
+            }
+
             Divider()
 
-            AboutSection(model: model)
-
-            Divider()
-
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
+            HStack(spacing: 10) {
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
+                Spacer()
+                Button {
+                    model.openSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .help("Menu bar display settings")
+            }
         }
     }
 
@@ -727,18 +825,12 @@ struct StatusHomeView: View {
             : "Fan Auto… (password only if helper not installed yet)"
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.global(qos: .userInitiated).async {
-            // Always use privileged helper — password only on first install.
             let result = FanService.setModePrivileged(mode)
             DispatchQueue.main.async {
                 model.isChangingFanMode = false
                 model.lastNotifyMessage = TextFormat.fanControl(result)
                 model.fanIsFull = FanService.isFullMode(result.fans)
-                model.showFanBadge = !result.fans.isEmpty
-                model.statusItemImage = MenuBarStatusIcon.make(
-                    title: model.title,
-                    showBadge: model.showFanBadge,
-                    isFull: model.fanIsFull
-                )
+                model.applyStatusItem()
                 model.refresh()
             }
         }
@@ -750,6 +842,128 @@ struct StatusHomeView: View {
             Spacer()
             Text(value).font(.body.monospacedDigit())
         }
+    }
+}
+
+struct MenuBarSettingsView: View {
+    @ObservedObject var model: MenuBarModel
+    @State private var draft: MenuBarDisplayConfig = .default
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Menu Bar Settings")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        model.closeSettings()
+                        model.refresh()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+
+                Text("Status item style")
+                    .font(.subheadline.weight(.semibold))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(MenuBarStatusStyle.allCases) { style in
+                        Button {
+                            draft.style = style
+                            preview(draft)
+                        } label: {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: draft.style == style ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(draft.style == style ? Color.accentColor : .secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(style.title)
+                                        .font(.callout.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text(style.subtitle)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Divider()
+
+                Text("Show in menu bar")
+                    .font(.subheadline.weight(.semibold))
+                toggle("CPU temperature", draft.showCPUTemp) { draft.showCPUTemp = $0; preview(draft) }
+                toggle("GPU temperature", draft.showGPUTemp) { draft.showGPUTemp = $0; preview(draft) }
+                toggle("CPU load %", draft.showLoad) { draft.showLoad = $0; preview(draft) }
+                toggle("Fan RPM", draft.showFanRPM) { draft.showFanRPM = $0; preview(draft) }
+                toggle("Fan A/F badge", draft.showFanBadge) { draft.showFanBadge = $0; preview(draft) }
+                toggle("Battery %", draft.showBattery) { draft.showBattery = $0; preview(draft) }
+
+                Text("Temp only / Fan only styles ignore most toggles above.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                Text("Show in panel")
+                    .font(.subheadline.weight(.semibold))
+
+                Group {
+                    toggle("Model", draft.panelModel) { draft.panelModel = $0 }
+                    toggle("Chip", draft.panelChip) { draft.panelChip = $0 }
+                    toggle("CPU", draft.panelCPU) { draft.panelCPU = $0 }
+                    toggle("GPU", draft.panelGPU) { draft.panelGPU = $0 }
+                    toggle("Load", draft.panelLoad) { draft.panelLoad = $0 }
+                    toggle("Thermal", draft.panelThermal) { draft.panelThermal = $0 }
+                    toggle("Fans", draft.panelFans) { draft.panelFans = $0 }
+                    toggle("Fan control", draft.panelFanControl) { draft.panelFanControl = $0 }
+                    toggle("Battery", draft.panelBattery) { draft.panelBattery = $0 }
+                    toggle("Memory", draft.panelMemory) { draft.panelMemory = $0 }
+                    toggle("CPU history", draft.panelCPUHist) { draft.panelCPUHist = $0 }
+                    toggle("Alerts", draft.panelAlerts) { draft.panelAlerts = $0 }
+                    toggle("Integrations", draft.panelIntegrations) { draft.panelIntegrations = $0 }
+                    toggle("About", draft.panelAbout) { draft.panelAbout = $0 }
+                }
+
+                HStack {
+                    Button("Reset") {
+                        draft = .default
+                        preview(draft)
+                    }
+                    Spacer()
+                    Button("Done") {
+                        model.saveDisplayConfig(draft)
+                        model.closeSettings()
+                        model.refresh()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .frame(maxHeight: 520)
+        .onAppear {
+            draft = model.displayConfig
+        }
+    }
+
+    private func preview(_ config: MenuBarDisplayConfig) {
+        model.displayConfig = config
+        model.applyStatusItem()
+    }
+
+    private func toggle(_ title: String, _ value: Bool, onChange: @escaping (Bool) -> Void) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { value },
+            set: { onChange($0) }
+        ))
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.caption)
     }
 }
 

@@ -110,6 +110,32 @@ public enum ConfigStore {
                 case "mailgun_domain": config.integrations.mail.mailgunDomain = value
                 default: break
                 }
+            } else if section == "menubar" {
+                switch key {
+                case "style":
+                    config.menuBar.style = MenuBarStatusStyle(rawValue: value) ?? config.menuBar.style
+                case "show_cpu_temp": config.menuBar.showCPUTemp = value == "true"
+                case "show_gpu_temp": config.menuBar.showGPUTemp = value == "true"
+                case "show_load": config.menuBar.showLoad = value == "true"
+                case "show_fan_rpm": config.menuBar.showFanRPM = value == "true"
+                case "show_fan_badge": config.menuBar.showFanBadge = value == "true"
+                case "show_battery": config.menuBar.showBattery = value == "true"
+                case "panel_model": config.menuBar.panelModel = value == "true"
+                case "panel_chip": config.menuBar.panelChip = value == "true"
+                case "panel_cpu": config.menuBar.panelCPU = value == "true"
+                case "panel_gpu": config.menuBar.panelGPU = value == "true"
+                case "panel_load": config.menuBar.panelLoad = value == "true"
+                case "panel_thermal": config.menuBar.panelThermal = value == "true"
+                case "panel_fans": config.menuBar.panelFans = value == "true"
+                case "panel_fan_control": config.menuBar.panelFanControl = value == "true"
+                case "panel_battery": config.menuBar.panelBattery = value == "true"
+                case "panel_memory": config.menuBar.panelMemory = value == "true"
+                case "panel_cpu_hist": config.menuBar.panelCPUHist = value == "true"
+                case "panel_alerts": config.menuBar.panelAlerts = value == "true"
+                case "panel_integrations": config.menuBar.panelIntegrations = value == "true"
+                case "panel_about": config.menuBar.panelAbout = value == "true"
+                default: break
+                }
             }
         }
         return config
@@ -134,6 +160,7 @@ public enum ConfigStore {
         let s = config.integrations.slack
         let t = config.integrations.telegram
         let m = config.integrations.mail
+        let mb = config.menuBar
         return """
         # MasterFabric configuration
         # https://github.com/gurkanfikretgunak/masterfabric-mac-cli
@@ -142,6 +169,29 @@ public enum ConfigStore {
         language = "\(escapeTOML(config.language))"
         launch_at_login = \(config.launchAtLogin)
         poll_interval_seconds = \(config.pollIntervalSeconds)
+
+        [menubar]
+        style = "\(mb.style.rawValue)"
+        show_cpu_temp = \(mb.showCPUTemp)
+        show_gpu_temp = \(mb.showGPUTemp)
+        show_load = \(mb.showLoad)
+        show_fan_rpm = \(mb.showFanRPM)
+        show_fan_badge = \(mb.showFanBadge)
+        show_battery = \(mb.showBattery)
+        panel_model = \(mb.panelModel)
+        panel_chip = \(mb.panelChip)
+        panel_cpu = \(mb.panelCPU)
+        panel_gpu = \(mb.panelGPU)
+        panel_load = \(mb.panelLoad)
+        panel_thermal = \(mb.panelThermal)
+        panel_fans = \(mb.panelFans)
+        panel_fan_control = \(mb.panelFanControl)
+        panel_battery = \(mb.panelBattery)
+        panel_memory = \(mb.panelMemory)
+        panel_cpu_hist = \(mb.panelCPUHist)
+        panel_alerts = \(mb.panelAlerts)
+        panel_integrations = \(mb.panelIntegrations)
+        panel_about = \(mb.panelAbout)
 
         [alerts]
         enabled = \(config.alerts.enabled)
