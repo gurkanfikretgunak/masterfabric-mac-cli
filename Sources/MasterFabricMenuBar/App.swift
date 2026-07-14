@@ -43,22 +43,32 @@ final class MenuBarModel: ObservableObject {
     @Published var integrations: IntegrationsConfig = ConfigStore.load().integrations
     @Published var lastNotifyMessage: String = ""
 
+    /// Inline editor (not a sheet — MenuBarExtra sheets need two clicks to dismiss).
     @Published var showAddIntegration = false
     @Published var editingKind: IntegrationKind = .slack
+    @Published var editorSession: Int = 0
 
     private var timer: Timer?
 
     init() {
-        refresh()
+        refreshMetrics()
         let interval = ConfigStore.load().pollIntervalSeconds
         timer = Timer.scheduledTimer(withTimeInterval: max(1.0, interval), repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                self?.refreshMetrics()
             }
         }
     }
 
+    /// Public refresh used by the Refresh button.
     func refresh() {
+        refreshMetrics()
+    }
+
+    private func refreshMetrics() {
+        // Don't stomp the inline editor while the user is configuring a channel.
+        guard !showAddIntegration else { return }
+
         HistoryStore.record()
         status = StatusService.current()
         info = SystemInfoService.current()
@@ -83,7 +93,17 @@ final class MenuBarModel: ObservableObject {
         } else {
             editingKind = .slack
         }
+        editorSession &+= 1
         showAddIntegration = true
+    }
+
+    func closeEditor() {
+        showAddIntegration = false
+        // Pull latest config after leaving the editor.
+        var config = ConfigStore.load()
+        config.language = "en"
+        integrations = config.integrations
+        alerts = AlertService.evaluate(status: status, memory: memory, config: config)
     }
 
     func isConfigured(_ kind: IntegrationKind) -> Bool {
@@ -154,13 +174,26 @@ final class MenuBarModel: ObservableObject {
         let results = IntegrationNotifier.send(msg, channel: channel)
         lastNotifyMessage = TextFormat.notifyResults(results)
     }
-
-    func statusLabel(for kind: IntegrationKind) -> String {
-        isEnabled(kind) ? "On" : "Off"
-    }
 }
 
 struct MenuBarPanel: View {
+    @ObservedObject var model: MenuBarModel
+
+    var body: some View {
+        Group {
+            if model.showAddIntegration {
+                AddIntegrationForm(model: model)
+                    .id(model.editorSession)
+            } else {
+                StatusHomeView(model: model)
+            }
+        }
+        .padding(14)
+        .frame(width: 320)
+    }
+}
+
+struct StatusHomeView: View {
     @ObservedObject var model: MenuBarModel
 
     var body: some View {
@@ -226,11 +259,6 @@ struct MenuBarPanel: View {
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         }
-        .padding(14)
-        .frame(width: 320)
-        .sheet(isPresented: $model.showAddIntegration) {
-            AddIntegrationSheet(model: model)
-        }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -258,7 +286,7 @@ struct IntegrationsSection: View {
                         Image(systemName: "plus.circle.fill")
                             .imageScale(.medium)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                     .help("Add Slack, Telegram, or Mail")
                 }
             }
@@ -298,20 +326,17 @@ struct IntegrationsSection: View {
     }
 }
 
-struct AddIntegrationSheet: View {
+/// Inline form (replaces home view). Avoids MenuBarExtra `.sheet` double-click close bug.
+struct AddIntegrationForm: View {
     @ObservedObject var model: MenuBarModel
 
     @State private var kind: IntegrationKind = .slack
     @State private var enabled = true
 
-    // Slack
     @State private var webhookURL = ""
-
-    // Telegram
     @State private var botToken = ""
     @State private var chatID = ""
 
-    // Mail
     @State private var provider = "resend"
     @State private var from = ""
     @State private var to = ""
@@ -329,10 +354,24 @@ struct AddIntegrationSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Add integration")
-                    .font(.headline)
+                Button {
+                    model.closeEditor()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+
                 Spacer()
-                Button(action: close) {
+
+                Text(model.isConfigured(model.editingKind) ? "Edit integration" : "Add integration")
+                    .font(.headline)
+
+                Spacer()
+
+                Button {
+                    model.closeEditor()
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
@@ -394,16 +433,14 @@ struct AddIntegrationSheet: View {
             HStack {
                 Button("Test") { test() }
                 Spacer()
-                Button("Cancel", action: close)
+                Button("Cancel") { model.closeEditor() }
                 Button("Save") {
                     save()
-                    close()
+                    model.closeEditor()
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(16)
-        .frame(width: 360)
         .onAppear {
             kind = model.editingKind
             if !pickerKinds.contains(kind), let first = pickerKinds.first {
@@ -413,13 +450,6 @@ struct AddIntegrationSheet: View {
         }
     }
 
-    /// MenuBarExtra sheets often ignore Environment.dismiss on the first click —
-    /// drive dismissal via the isPresented binding instead.
-    private func close() {
-        model.showAddIntegration = false
-    }
-
-    /// When adding: only unconfigured channels. When editing an existing one: keep that channel visible.
     private var pickerKinds: [IntegrationKind] {
         var kinds = model.availableToAdd
         if model.isConfigured(model.editingKind), !kinds.contains(model.editingKind) {
@@ -474,7 +504,10 @@ struct AddIntegrationSheet: View {
         var updated = model.integrations
         switch kind {
         case .slack:
-            updated.slack = SlackIntegrationConfig(enabled: enabled, webhookURL: webhookURL.trimmingCharacters(in: .whitespacesAndNewlines))
+            updated.slack = SlackIntegrationConfig(
+                enabled: enabled,
+                webhookURL: webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
         case .telegram:
             updated.telegram = TelegramIntegrationConfig(
                 enabled: enabled,
