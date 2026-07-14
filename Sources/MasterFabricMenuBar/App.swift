@@ -200,6 +200,13 @@ final class MenuBarModel: ObservableObject {
     @Published var editingAlertKind: AlertKind = .cpu
     @Published var alertEditorSession: Int = 0
 
+    /// Inline update prompt (avoid MenuBarExtra `.sheet` dismiss bugs).
+    @Published var showUpdateDialog = false
+    @Published var pendingUpdate: VersionCheckResult?
+    @Published var declinedRemoteVersion: String?
+    @Published var isCheckingUpdate = false
+    @Published var isUpdating = false
+
     private var timer: Timer?
 
     init() {
@@ -218,7 +225,7 @@ final class MenuBarModel: ObservableObject {
     }
 
     private var isEditingInline: Bool {
-        showAddIntegration || showEditAlert
+        showAddIntegration || showEditAlert || showUpdateDialog
     }
 
     private func refreshMetrics() {
@@ -402,6 +409,56 @@ final class MenuBarModel: ObservableObject {
         let results = IntegrationNotifier.send(msg, channel: channel)
         lastNotifyMessage = TextFormat.notifyResults(results)
     }
+
+    func checkForUpdates(promptIfAvailable: Bool, forcePrompt: Bool = false) {
+        guard !isCheckingUpdate else { return }
+        isCheckingUpdate = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = VersionService.check()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isCheckingUpdate = false
+                self.pendingUpdate = result
+                if result.updateAvailable {
+                    let remote = result.remote ?? ""
+                    let alreadyDeclined = self.declinedRemoteVersion == remote
+                    if forcePrompt || (promptIfAvailable && !alreadyDeclined) {
+                        self.showAddIntegration = false
+                        self.showEditAlert = false
+                        self.showUpdateDialog = true
+                    }
+                } else if forcePrompt {
+                    self.lastNotifyMessage = VersionService.format(result)
+                }
+            }
+        }
+    }
+
+    func declineUpdate() {
+        if let remote = pendingUpdate?.remote {
+            declinedRemoteVersion = remote
+        }
+        showUpdateDialog = false
+        lastNotifyMessage = "Update declined"
+    }
+
+    func acceptUpdate() {
+        guard !isUpdating else { return }
+        isUpdating = true
+        lastNotifyMessage = "Updating from GitHub…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = UpdateService.update(force: false)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isUpdating = false
+                self.showUpdateDialog = false
+                self.lastNotifyMessage = UpdateService.format(result)
+                if result.performed {
+                    self.declinedRemoteVersion = nil
+                }
+            }
+        }
+    }
 }
 
 struct MenuBarPanel: View {
@@ -409,7 +466,9 @@ struct MenuBarPanel: View {
 
     var body: some View {
         Group {
-            if model.showEditAlert {
+            if model.showUpdateDialog {
+                UpdatePromptView(model: model)
+            } else if model.showEditAlert {
                 EditAlertForm(model: model)
                     .id(model.alertEditorSession)
             } else if model.showAddIntegration {
@@ -424,17 +483,84 @@ struct MenuBarPanel: View {
     }
 }
 
+struct UpdatePromptView: View {
+    @ObservedObject var model: MenuBarModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.orange)
+                Text("Update available")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    model.declineUpdate()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.isUpdating)
+            }
+
+            let local = model.pendingUpdate?.local ?? AboutInfo.version
+            let remote = model.pendingUpdate?.remote ?? "?"
+            Text("A newer open-source release is on GitHub.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Installed: v\(local)")
+                .font(.callout.monospacedDigit())
+            Text("Latest:    v\(remote)")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.orange)
+
+            if model.isUpdating {
+                Text("Updating from GitHub…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Decline") {
+                    model.declineUpdate()
+                }
+                .disabled(model.isUpdating)
+                Spacer()
+                Button(model.isUpdating ? "Updating…" : "Update") {
+                    model.acceptUpdate()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(model.isUpdating)
+            }
+        }
+    }
+}
+
 struct StatusHomeView: View {
     @ObservedObject var model: MenuBarModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("MasterFabric")
-                .font(.headline)
-            Text("MacBook system monitor · CLI · Menu Bar · MCP")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MasterFabric")
+                        .font(.headline)
+                    Text("MacBook system monitor · CLI · Menu Bar · MCP")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    model.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh metrics")
+            }
 
             Group {
                 row("Model", model.info.model)
@@ -493,7 +619,6 @@ struct StatusHomeView: View {
 
             Divider()
 
-            Button("Refresh") { model.refresh() }
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         }
@@ -514,8 +639,27 @@ struct AboutSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("About")
-                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text("About")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    model.checkForUpdates(promptIfAvailable: true, forcePrompt: true)
+                } label: {
+                    Group {
+                        if model.isCheckingUpdate {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .help("Check for updates")
+                .disabled(model.isCheckingUpdate || model.isUpdating)
+            }
 
             Text("\(AboutInfo.product) v\(AboutInfo.version)")
                 .font(.caption)
@@ -527,25 +671,6 @@ struct AboutSection: View {
                     .foregroundStyle(remoteLabel.contains("Update") ? .orange : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Button("Check for updates") {
-                refreshRemote(andNotify: true)
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
-
-            Button("Update from GitHub") {
-                model.lastNotifyMessage = "Updating from GitHub…"
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let result = UpdateService.update(force: false)
-                    DispatchQueue.main.async {
-                        model.lastNotifyMessage = UpdateService.format(result)
-                        refreshRemote(andNotify: false)
-                    }
-                }
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
 
             HStack(spacing: 4) {
                 Text("Author")
@@ -573,31 +698,26 @@ struct AboutSection: View {
                 .font(.caption2)
         }
         .onAppear {
-            refreshRemote(andNotify: false)
+            model.checkForUpdates(promptIfAvailable: true, forcePrompt: false)
+            syncLabelFromPending()
+        }
+        .onChange(of: model.pendingUpdate) { _ in
+            syncLabelFromPending()
         }
     }
 
-    private func refreshRemote(andNotify: Bool) {
-        DispatchQueue.global(qos: .utility).async {
-            let result = VersionService.check()
-            let label: String
-            if let remote = result.remote {
-                if result.updateAvailable {
-                    label = "GitHub latest: v\(remote) — Update available"
-                } else if VersionService.isRemoteNewer(remote: AboutInfo.version, local: remote) {
-                    label = "GitHub latest: v\(remote) (local ahead)"
-                } else {
-                    label = "GitHub latest: v\(remote) — up to date"
-                }
+    private func syncLabelFromPending() {
+        guard let result = model.pendingUpdate else { return }
+        if let remote = result.remote {
+            if result.updateAvailable {
+                remoteLabel = "GitHub latest: v\(remote) — Update available"
+            } else if VersionService.isRemoteNewer(remote: AboutInfo.version, local: remote) {
+                remoteLabel = "GitHub latest: v\(remote) (local ahead)"
             } else {
-                label = result.detail
+                remoteLabel = "GitHub latest: v\(remote) — up to date"
             }
-            DispatchQueue.main.async {
-                remoteLabel = label
-                if andNotify {
-                    model.lastNotifyMessage = VersionService.format(result)
-                }
-            }
+        } else {
+            remoteLabel = result.detail
         }
     }
 }

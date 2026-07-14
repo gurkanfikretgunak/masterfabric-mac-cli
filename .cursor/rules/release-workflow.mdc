@@ -1,0 +1,39 @@
+---
+description: Release workflow — commit, bump version, GitHub release before next feature work
+alwaysApply: true
+---
+
+# Release workflow (MasterFabric Mac CLI)
+
+When a feature or fix is **done and ready to ship**, do not leave it only as local commits. Finish the release loop before starting unrelated new work.
+
+## Required sequence
+
+1. **Commit** all related changes with a clear message (English).
+2. **Bump version** in root `VERSION` (semver patch/minor as appropriate), then `make version-sync` (keeps `AppVersion.current` aligned). Update `Formula/masterfabric.rb` tag URL if present.
+3. **Push `main`** to GitHub.
+4. **Tag + release** with `gh`:
+   - `git tag -a vX.Y.Z -m "MasterFabric Mac CLI vX.Y.Z"`
+   - `git push origin vX.Y.Z`
+   - `gh release create vX.Y.Z --title "vX.Y.Z" --notes "…"`
+5. **Only then** start the next feature/fix branch of work.
+
+## Commands (reference)
+
+```bash
+echo 'X.Y.Z' > VERSION && make version-sync
+git add -A && git commit -m "…" && git push origin main
+git tag -a vX.Y.Z -m "MasterFabric Mac CLI vX.Y.Z" && git push origin vX.Y.Z
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "## …"
+```
+
+## Do not
+
+- Ship code to `main` without a matching GitHub release when the change is user-facing.
+- Bump `VERSION` without tagging/releasing (or vice versa).
+- Commit secrets, real tokens, or personal `chat_id` values.
+- Skip `make version-sync` after editing `VERSION`.
+
+## After release
+
+Optionally verify on the machine: `mf update` / `make install`, then `mf version --check --json`.
