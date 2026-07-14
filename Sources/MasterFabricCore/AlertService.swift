@@ -40,7 +40,11 @@ public enum AlertService {
     ) {
         let messages = evaluate(status: status, memory: memory, config: config)
         guard !messages.isEmpty else { return }
-        // Raw SPM binaries (no .app bundle) crash inside UNUserNotificationCenter.
+
+        // Remote integrations (Slack / Telegram / mail)
+        _ = IntegrationNotifier.deliverAlerts(messages, config: config)
+
+        // Local notification only inside a real .app bundle
         guard Bundle.main.bundleIdentifier != nil,
               Bundle.main.bundleURL.pathExtension == "app"
         else { return }

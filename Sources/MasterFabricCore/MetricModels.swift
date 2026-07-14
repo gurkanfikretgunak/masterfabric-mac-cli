@@ -233,23 +233,27 @@ public struct AppConfig: Sendable, Codable, Equatable {
     public var launchAtLogin: Bool
     public var pollIntervalSeconds: Double
     public var alerts: AlertConfig
+    public var integrations: IntegrationsConfig
 
     public static let `default` = AppConfig(
         language: "en",
         launchAtLogin: false,
         pollIntervalSeconds: 2.0,
-        alerts: .default
+        alerts: .default,
+        integrations: .default
     )
 
     public init(
         language: String,
         launchAtLogin: Bool,
         pollIntervalSeconds: Double,
-        alerts: AlertConfig
+        alerts: AlertConfig,
+        integrations: IntegrationsConfig = .default
     ) {
         self.language = language
         self.launchAtLogin = launchAtLogin
         self.pollIntervalSeconds = pollIntervalSeconds
         self.alerts = alerts
+        self.integrations = integrations
     }
 }

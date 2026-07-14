@@ -41,7 +41,7 @@ public enum L10n {
 }
 
 public enum AboutInfo {
-    public static let version = "0.2.0"
+    public static let version = "0.3.0"
     public static let product = "MasterFabric Mac CLI"
 
     public static func text(language: String? = nil) -> String {

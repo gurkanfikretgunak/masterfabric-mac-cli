@@ -183,6 +183,18 @@ final class MCPServer {
                 ]
             ),
             tool(name: "get_about", description: "Product version and privacy statement."),
+            tool(
+                name: "notify_send",
+                description: "Send a message via Slack, Telegram, and/or mail integrations.",
+                properties: [
+                    "message": ["type": "string", "description": "Message body"],
+                    "channel": [
+                        "type": "string",
+                        "description": "slack | telegram | mail | all",
+                    ],
+                ]
+            ),
+            tool(name: "notify_status", description: "Show Slack/Telegram/mail integration status."),
         ]
     }
 
@@ -245,6 +257,14 @@ final class MCPServer {
             return try JSONOutput.string(c)
         case "get_about":
             return AboutInfo.text()
+        case "notify_status":
+            return try JSONOutput.string(ConfigStore.load().integrations)
+        case "notify_send":
+            let message = arguments["message"] as? String ?? ""
+            let channelRaw = (arguments["channel"] as? String ?? "all").lowercased()
+            let channel = NotifyChannel(rawValue: channelRaw) ?? .all
+            let results = IntegrationNotifier.send(message, channel: channel)
+            return try JSONOutput.string(results)
         default:
             throw NSError(
                 domain: "MasterFabricMCP",

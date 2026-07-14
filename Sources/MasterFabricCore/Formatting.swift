@@ -176,7 +176,10 @@ public enum TextFormat {
     }
 
     public static func config(_ c: AppConfig) -> String {
-        """
+        let s = c.integrations.slack
+        let t = c.integrations.telegram
+        let m = c.integrations.mail
+        return """
         language:              \(c.language)
         launch_at_login:       \(c.launchAtLogin)
         poll_interval_seconds: \(c.pollIntervalSeconds)
@@ -184,7 +187,17 @@ public enum TextFormat {
         alerts.cpu_temp_c:     \(c.alerts.cpuTempCelsius)
         alerts.fan_near_max_%: \(c.alerts.fanNearMaxPercent)
         alerts.memory_notify:  \(c.alerts.memoryPressureNotify)
+        slack.enabled:         \(s.enabled)  configured=\(s.isConfigured)
+        telegram.enabled:      \(t.enabled)  configured=\(t.isConfigured)
+        mail.enabled:          \(m.enabled)  provider=\(m.provider) configured=\(m.isConfigured)
         path: \(ConfigStore.configURL.path)
         """
+    }
+
+    public static func notifyResults(_ results: [NotifyDeliveryResult]) -> String {
+        if results.isEmpty { return "No deliveries" }
+        return results.map { r in
+            "\(r.ok ? "✓" : "✗") \(r.channel): \(r.detail)"
+        }.joined(separator: "\n")
     }
 }
