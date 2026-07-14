@@ -510,6 +510,7 @@ struct StatusHomeView: View {
 
 struct AboutSection: View {
     @ObservedObject var model: MenuBarModel
+    @State private var remoteLabel: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -520,9 +521,15 @@ struct AboutSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            if !remoteLabel.isEmpty {
+                Text(remoteLabel)
+                    .font(.caption2)
+                    .foregroundStyle(remoteLabel.contains("Update") ? .orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Button("Check for updates") {
-                let result = VersionService.check()
-                model.lastNotifyMessage = VersionService.format(result)
+                refreshRemote(andNotify: true)
             }
             .buttonStyle(.borderless)
             .font(.caption)
@@ -533,6 +540,7 @@ struct AboutSection: View {
                     let result = UpdateService.update(force: false)
                     DispatchQueue.main.async {
                         model.lastNotifyMessage = UpdateService.format(result)
+                        refreshRemote(andNotify: false)
                     }
                 }
             }
@@ -563,6 +571,33 @@ struct AboutSection: View {
 
             Link("GitHub repo", destination: URL(string: AboutInfo.repoURL)!)
                 .font(.caption2)
+        }
+        .onAppear {
+            refreshRemote(andNotify: false)
+        }
+    }
+
+    private func refreshRemote(andNotify: Bool) {
+        DispatchQueue.global(qos: .utility).async {
+            let result = VersionService.check()
+            let label: String
+            if let remote = result.remote {
+                if result.updateAvailable {
+                    label = "GitHub latest: v\(remote) — Update available"
+                } else if VersionService.isRemoteNewer(remote: AboutInfo.version, local: remote) {
+                    label = "GitHub latest: v\(remote) (local ahead)"
+                } else {
+                    label = "GitHub latest: v\(remote) — up to date"
+                }
+            } else {
+                label = result.detail
+            }
+            DispatchQueue.main.async {
+                remoteLabel = label
+                if andNotify {
+                    model.lastNotifyMessage = VersionService.format(result)
+                }
+            }
         }
     }
 }
