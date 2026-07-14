@@ -14,10 +14,68 @@ struct MasterFabricMenuBarApp: App {
         MenuBarExtra {
             MenuBarPanel(model: model)
         } label: {
-            Text(model.title)
-                .font(.system(size: 12).monospacedDigit())
+            // MenuBarExtra only reliably shows Text / Image — colored badge is pre-rendered.
+            if let image = model.statusItemImage {
+                Image(nsImage: image)
+            } else {
+                Text(model.title)
+                    .font(.system(size: 12).monospacedDigit())
+            }
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+/// Renders title + A/F pill as a bitmap. SwiftUI backgrounds are stripped from MenuBarExtra labels.
+enum MenuBarStatusIcon {
+    static func make(title: String, showBadge: Bool, isFull: Bool) -> NSImage {
+        let titleFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let titleSize = (title as NSString).size(withAttributes: titleAttrs)
+
+        let badgeLetter = isFull ? "F" : "A"
+        let badgeFont = NSFont.systemFont(ofSize: 9, weight: .bold)
+        let badgeAttrs: [NSAttributedString.Key: Any] = [
+            .font: badgeFont,
+            .foregroundColor: NSColor.white,
+        ]
+        let badgeTextSize = (badgeLetter as NSString).size(withAttributes: badgeAttrs)
+        let badgeH: CGFloat = 13
+        let badgeW: CGFloat = max(14, badgeTextSize.width + 8)
+        let gap: CGFloat = 5
+        let height: CGFloat = 18
+        let width = ceil(titleSize.width + (showBadge ? gap + badgeW : 0) + 2)
+
+        let size = NSSize(width: width, height: height)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let titleY = (height - titleSize.height) / 2
+            (title as NSString).draw(at: NSPoint(x: 0, y: titleY), withAttributes: titleAttrs)
+
+            guard showBadge else { return true }
+
+            let bx = titleSize.width + gap
+            let by = (height - badgeH) / 2
+            let fill = isFull
+                ? NSColor(calibratedRed: 0.20, green: 0.48, blue: 0.96, alpha: 1) // blue Full
+                : NSColor(calibratedRed: 0.18, green: 0.72, blue: 0.36, alpha: 1) // green Auto
+            let path = NSBezierPath(
+                roundedRect: NSRect(x: bx, y: by, width: badgeW, height: badgeH),
+                xRadius: 4,
+                yRadius: 4
+            )
+            fill.setFill()
+            path.fill()
+
+            let tx = bx + (badgeW - badgeTextSize.width) / 2
+            let ty = by + (badgeH - badgeTextSize.height) / 2 - 0.5
+            (badgeLetter as NSString).draw(at: NSPoint(x: tx, y: ty), withAttributes: badgeAttrs)
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 }
 
@@ -178,7 +236,11 @@ enum AlertKind: String, CaseIterable, Identifiable {
 @MainActor
 final class MenuBarModel: ObservableObject {
     @Published var title: String = "mf…"
+    @Published var statusItemImage: NSImage?
     @Published var status: SystemStatus = StatusService.current()
+    @Published var fanIsFull: Bool = false
+    @Published var showFanBadge: Bool = false
+    @Published var isChangingFanMode: Bool = false
     @Published var info: SystemInfo = SystemInfoService.current()
     @Published var battery: BatteryInfo = BatteryService.current()
     @Published var memory: MemoryInfo = MemoryService.current()
@@ -255,6 +317,13 @@ final class MenuBarModel: ObservableObject {
         )
         integrations = config.integrations
         title = TextFormat.compactStatusBar(status, load: load)
+        showFanBadge = !status.fans.isEmpty
+        fanIsFull = FanService.isFullMode(status.fans)
+        statusItemImage = MenuBarStatusIcon.make(
+            title: title,
+            showBadge: showFanBadge,
+            isFull: fanIsFull
+        )
 
         if config.alerts.notifyIntegrations, !alerts.isEmpty {
             let results = AlertService.notifyIfNeeded(
@@ -578,7 +647,34 @@ struct StatusHomeView: View {
                 row("Fan", "N/A")
             } else {
                 ForEach(Array(model.status.fans.enumerated()), id: \.offset) { _, fan in
-                    row(fan.name, fan.rpm.map { String(format: "%.0f RPM", $0) } ?? "N/A")
+                    let rpm = fan.rpm.map { String(format: "%.0f", $0) } ?? "—"
+                    let max = fan.maxRPM.map { String(format: "%.0f", $0) } ?? "?"
+                    row(fan.name, "\(rpm)/\(max) · \(fan.mode)")
+                }
+                HStack(spacing: 8) {
+                    Text("Fan control")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if model.isChangingFanMode {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Button("Auto") {
+                        applyFanMode(.auto)
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .disabled(model.isChangingFanMode)
+                    .help("Automatic control — password only on first helper install")
+
+                    Button("Full") {
+                        applyFanMode(.full)
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .disabled(model.isChangingFanMode)
+                    .help("Max RPM — password only on first helper install")
                 }
             }
 
@@ -621,6 +717,30 @@ struct StatusHomeView: View {
 
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
+        }
+    }
+
+    private func applyFanMode(_ mode: FanControlMode) {
+        model.isChangingFanMode = true
+        model.lastNotifyMessage = mode == .full
+            ? "Fan Full… (password only if helper not installed yet)"
+            : "Fan Auto… (password only if helper not installed yet)"
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Always use privileged helper — password only on first install.
+            let result = FanService.setModePrivileged(mode)
+            DispatchQueue.main.async {
+                model.isChangingFanMode = false
+                model.lastNotifyMessage = TextFormat.fanControl(result)
+                model.fanIsFull = FanService.isFullMode(result.fans)
+                model.showFanBadge = !result.fans.isEmpty
+                model.statusItemImage = MenuBarStatusIcon.make(
+                    title: model.title,
+                    showBadge: model.showFanBadge,
+                    isFull: model.fanIsFull
+                )
+                model.refresh()
+            }
         }
     }
 

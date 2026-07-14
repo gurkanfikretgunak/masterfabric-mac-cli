@@ -60,7 +60,8 @@ Copy-paste starter: [examples/mcp.json](examples/mcp.json)
 | Tool | Returns |
 |------|---------|
 | `get_status` | CPU/GPU °C + fan RPM |
-| `get_temp` / `get_fan` | Temps or fans only |
+| `get_temp` / `get_fan` | Temps or fans (CPU + GPU roles) |
+| `set_fan_mode` | `auto` or `full` (max RPM) for both fans |
 | `get_info` | Model, chip, macOS, RAM, uptime |
 | `get_battery` | %, health, cycles, watts |
 | `get_memory` / `get_disk` / `get_network` | Host metrics |
@@ -145,7 +146,25 @@ mf about
 ### Cheat sheet
 
 ```text
-mf status | temp | fan | info
+mf status | temp | fan | fan auto | fan full | info
+```
+
+Fan control (`mf fan auto` / `mf fan full`) writes SMC keys and usually needs elevation:
+
+```text
+# Recommended (menu bar / one-time admin helper):
+mf fan helper install          # password once
+mf fan full --elevate
+mf fan auto --elevate
+
+# Or classic sudo each time:
+sudo mf fan full
+sudo mf fan auto
+```
+
+Menu Bar **Auto** / **Full** installs a root helper the first time (one password), then switches without prompting again.
+
+```text
 mf battery | memory | disk | network | cpu
 mf power | top | history | watch
 mf check [--notify]

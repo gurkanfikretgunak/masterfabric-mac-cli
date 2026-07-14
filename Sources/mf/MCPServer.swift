@@ -164,7 +164,17 @@ final class MCPServer {
             tool(name: "get_info", description: "Mac model, chip, macOS version, RAM, and uptime."),
             tool(name: "get_status", description: "Current CPU/GPU temperatures and fan RPM."),
             tool(name: "get_temp", description: "CPU and GPU temperatures in Celsius."),
-            tool(name: "get_fan", description: "Fan RPM list (empty on fanless Macs)."),
+            tool(name: "get_fan", description: "Fan RPM list with CPU/GPU roles and mode (empty on fanless Macs)."),
+            tool(
+                name: "set_fan_mode",
+                description: "Set both fans to auto (system thermal) or full (hardware max RPM). Fan0=CPU, Fan1=GPU. macOS often requires admin privileges; if needsPrivilege=true, ask the user to run `sudo mf fan <mode>` or use the menu bar buttons (password prompt).",
+                properties: [
+                    "mode": [
+                        "type": "string",
+                        "description": "auto | full",
+                    ],
+                ]
+            ),
             tool(name: "get_battery", description: "Battery percent, health, cycles, watts."),
             tool(name: "get_memory", description: "Memory usage, swap, and pressure."),
             tool(name: "get_disk", description: "Root volume disk capacity."),
@@ -240,6 +250,16 @@ final class MCPServer {
             return try JSONOutput.string(ThermalService.read())
         case "get_fan":
             return try JSONOutput.string(FanService.read())
+        case "set_fan_mode":
+            let raw = (arguments["mode"] as? String ?? "").lowercased()
+            guard let mode = FanControlMode(rawValue: raw) else {
+                throw NSError(
+                    domain: "MasterFabricMCP",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "mode must be auto or full"]
+                )
+            }
+            return try JSONOutput.string(FanService.setMode(mode))
         case "get_battery":
             return try JSONOutput.string(BatteryService.current())
         case "get_memory":

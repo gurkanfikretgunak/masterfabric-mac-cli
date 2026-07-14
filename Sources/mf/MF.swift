@@ -13,6 +13,7 @@ struct MF: AsyncParsableCommand {
             Status.self,
             Temp.self,
             Fan.self,
+            FanDaemonCommand.self,
             Battery.self,
             Memory.self,
             Disk.self,
@@ -72,11 +73,113 @@ extension MF {
     }
 
     struct Fan: ParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Show fan speeds (RPM).")
-        @OptionGroup var format: JSONFlagOptions
-        func run() throws {
-            let fans = FanService.read()
-            print(format.json ? try JSONOutput.string(fans) : TextFormat.fans(fans))
+        static let configuration = CommandConfiguration(
+            abstract: "Fan speeds and control (auto / full). Two fans: CPU + GPU on most MacBook Pros.",
+            subcommands: [Status.self, Auto.self, Full.self, Helper.self],
+            defaultSubcommand: Status.self
+        )
+
+        struct Status: ParsableCommand {
+            static let configuration = CommandConfiguration(abstract: "Show fan RPM, mode, and targets.")
+            @OptionGroup var format: JSONFlagOptions
+            func run() throws {
+                let fans = FanService.read()
+                print(format.json ? try JSONOutput.string(fans) : TextFormat.fans(fans))
+            }
+        }
+
+        struct Auto: ParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Return fans to automatic system thermal control."
+            )
+            @OptionGroup var format: JSONFlagOptions
+            @Flag(name: .long, help: "Use privileged helper (installs once with admin password if needed).")
+            var elevate: Bool = false
+            func run() throws {
+                let result = elevate
+                    ? FanService.setModePrivileged(.auto)
+                    : FanService.setMode(.auto)
+                print(format.json ? try JSONOutput.string(result) : TextFormat.fanControl(result))
+                if !result.ok {
+                    if result.needsPrivilege {
+                        FileHandle.standardError.write(Data("Hint: mf fan auto --elevate   or   sudo mf fan auto\n".utf8))
+                    }
+                    throw ExitCode.failure
+                }
+            }
+        }
+
+        struct Full: ParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Force both fans (CPU + GPU) to hardware max RPM. Loud — switch back with `mf fan auto`."
+            )
+            @OptionGroup var format: JSONFlagOptions
+            @Flag(name: .long, help: "Use privileged helper (installs once with admin password if needed).")
+            var elevate: Bool = false
+            func run() throws {
+                let result = elevate
+                    ? FanService.setModePrivileged(.full)
+                    : FanService.setMode(.full)
+                print(format.json ? try JSONOutput.string(result) : TextFormat.fanControl(result))
+                if !result.ok {
+                    if result.needsPrivilege {
+                        FileHandle.standardError.write(Data("Hint: mf fan full --elevate   or   sudo mf fan full\n".utf8))
+                    }
+                    throw ExitCode.failure
+                }
+            }
+        }
+
+        struct Helper: ParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Privileged fan helper (one-time admin install for menu bar).",
+                subcommands: [Status.self, Install.self],
+                defaultSubcommand: Status.self
+            )
+
+            struct Status: ParsableCommand {
+                static let configuration = CommandConfiguration(abstract: "Show whether the root fan helper is running.")
+                func run() {
+                    let ok = FanDaemonInstaller.isInstalledAndRunning()
+                    print(ok
+                        ? "Fan helper: running (no password needed for Auto/Full)."
+                        : "Fan helper: not running — menu bar will ask for admin once to install.")
+                }
+            }
+
+            struct Install: ParsableCommand {
+                static let configuration = CommandConfiguration(
+                    abstract: "Install/start the root fan helper (single admin password prompt)."
+                )
+                func run() throws {
+                    if FanDaemonInstaller.isInstalledAndRunning() {
+                        print("Fan helper already running.")
+                        return
+                    }
+                    let result = FanDaemonInstaller.installWithAdminPrompt()
+                    print(result.detail)
+                    if !result.ok { throw ExitCode.failure }
+                    for _ in 0..<50 {
+                        if FanDaemonClient.isReachable() {
+                            print("Fan helper is ready.")
+                            return
+                        }
+                        Thread.sleep(forTimeInterval: 0.1)
+                    }
+                    print("Installed, but helper not reachable yet — try again in a moment.")
+                }
+            }
+        }
+    }
+
+    /// Root-only LaunchDaemon entrypoint (not for interactive use).
+    struct FanDaemonCommand: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "fan-daemon",
+            abstract: "Internal: root Unix-socket fan helper (LaunchDaemon)."
+        )
+        func run() {
+            FanDaemonServer.run()
         }
     }
 

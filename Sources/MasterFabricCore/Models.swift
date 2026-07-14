@@ -43,16 +43,75 @@ public struct SystemInfo: Sendable, Codable, Equatable {
 }
 
 public struct FanReading: Sendable, Codable, Equatable {
+    public var index: Int
     public var name: String
+    public var role: String
     public var rpm: Double?
     public var minRPM: Double?
     public var maxRPM: Double?
+    /// SMC mode when readable: 0 auto, 1 manual, 3 system (thermalmonitord).
+    public var modeRaw: UInt8?
+    public var mode: String
+    public var targetRPM: Double?
 
-    public init(name: String, rpm: Double?, minRPM: Double? = nil, maxRPM: Double? = nil) {
+    public init(
+        index: Int = 0,
+        name: String,
+        role: String = "",
+        rpm: Double?,
+        minRPM: Double? = nil,
+        maxRPM: Double? = nil,
+        modeRaw: UInt8? = nil,
+        mode: String = "unknown",
+        targetRPM: Double? = nil
+    ) {
+        self.index = index
         self.name = name
+        self.role = role
         self.rpm = rpm
         self.minRPM = minRPM
         self.maxRPM = maxRPM
+        self.modeRaw = modeRaw
+        self.mode = mode
+        self.targetRPM = targetRPM
+    }
+}
+
+public enum FanControlMode: String, Sendable, Codable, CaseIterable {
+    case auto
+    case full
+
+    public var label: String {
+        switch self {
+        case .auto: return "Auto"
+        case .full: return "Full"
+        }
+    }
+}
+
+public struct FanControlResult: Sendable, Codable, Equatable {
+    public var ok: Bool
+    public var mode: FanControlMode
+    public var detail: String
+    public var fans: [FanReading]
+    public var unlockedWithFtst: Bool
+    /// True when macOS blocked SMC writes without administrator privileges.
+    public var needsPrivilege: Bool
+
+    public init(
+        ok: Bool,
+        mode: FanControlMode,
+        detail: String,
+        fans: [FanReading],
+        unlockedWithFtst: Bool = false,
+        needsPrivilege: Bool = false
+    ) {
+        self.ok = ok
+        self.mode = mode
+        self.detail = detail
+        self.fans = fans
+        self.unlockedWithFtst = unlockedWithFtst
+        self.needsPrivilege = needsPrivilege
     }
 }
 

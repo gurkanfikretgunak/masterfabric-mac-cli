@@ -99,7 +99,19 @@ public enum TelegramBotService {
             return formatStatus()
         case cmd.hasPrefix("/temp"), text.contains("temp"), text.contains("sıcak"), text.contains("sicak"), text.contains("derece"):
             return TextFormat.temp(ThermalService.read())
-        case cmd.hasPrefix("/fan"), text.contains("fan"):
+        case cmd.hasPrefix("/fan"):
+            if text.contains("full") || text.contains("max") {
+                return TextFormat.fanControl(FanService.setMode(.full))
+            }
+            if text.contains("auto") {
+                return TextFormat.fanControl(FanService.setMode(.auto))
+            }
+            return TextFormat.fans(FanService.read())
+        case text.contains("fan") && (text.contains("full") || text.contains("max")):
+            return TextFormat.fanControl(FanService.setMode(.full))
+        case text.contains("fan") && text.contains("auto"):
+            return TextFormat.fanControl(FanService.setMode(.auto))
+        case text.contains("fan"):
             return TextFormat.fans(FanService.read())
         case cmd.hasPrefix("/battery"), cmd.hasPrefix("/bat"), text.contains("battery"), text.contains("pil"), text.contains("şarj"), text.contains("sarj"):
             return TextFormat.battery(BatteryService.current())
@@ -149,7 +161,9 @@ public enum TelegramBotService {
 
         /status   CPU/GPU/fan snapshot
         /temp     Temperatures
-        /fan      Fan RPM
+        /fan      Fan RPM (CPU + GPU)
+        /fan full Force max RPM
+        /fan auto System auto control
         /battery  Battery
         /info     Model / chip / RAM
         /cpu      CPU load

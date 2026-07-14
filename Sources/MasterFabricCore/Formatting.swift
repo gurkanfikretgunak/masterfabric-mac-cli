@@ -74,8 +74,22 @@ public enum TextFormat {
         if fans.isEmpty { return L10n.t("fan.na") }
         return fans.map { fan in
             let rpm = fan.rpm.map { String(format: "%.0f RPM", $0) } ?? "N/A"
-            return "\(fan.name): \(rpm)"
+            let max = fan.maxRPM.map { String(format: "%.0f", $0) } ?? "?"
+            let tgt = fan.targetRPM.map { String(format: " tgt %.0f", $0) } ?? ""
+            return "\(fan.name) [\(fan.role)]: \(rpm) / \(max) (\(fan.mode)\(tgt))"
         }.joined(separator: "\n")
+    }
+
+    public static func fanControl(_ result: FanControlResult) -> String {
+        var lines = [
+            result.ok ? "✓ Fan mode → \(result.mode.label)" : "✗ Fan mode → \(result.mode.label)",
+            result.detail,
+        ]
+        if !result.fans.isEmpty {
+            lines.append("")
+            lines.append(fans(result.fans))
+        }
+        return lines.joined(separator: "\n")
     }
 
     public static func compactStatusBar(_ status: SystemStatus, load: CPULoadInfo? = nil) -> String {

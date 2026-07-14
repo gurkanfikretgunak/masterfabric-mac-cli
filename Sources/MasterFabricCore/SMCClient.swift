@@ -7,15 +7,24 @@ public final class SMCClient: @unchecked Sendable {
         case serviceNotFound
         case openFailed
         case readFailed(String)
+        case writeFailed(String, UInt8)
+        /// macOS blocked the SMC write (`kIOReturnNotPrivileged`). Needs `sudo` / admin elevation.
+        case notPrivileged(String)
 
         public var errorDescription: String? {
             switch self {
             case .serviceNotFound: return "AppleSMC service not found"
             case .openFailed: return "Failed to open AppleSMC connection"
             case .readFailed(let key): return "Failed to read SMC key \(key)"
+            case .writeFailed(let key, let code): return "Failed to write SMC key \(key) (result=\(code))"
+            case .notPrivileged(let key):
+                return "SMC write denied for \(key) (administrator privileges required — try: sudo mf fan …)"
             }
         }
     }
+
+    /// `kIOReturnNotPrivileged` — user client write blocked without root.
+    private static let ioReturnNotPrivileged: kern_return_t = kern_return_t(bitPattern: 0xE000_02C1)
 
     private var connection: io_connect_t = 0
 
@@ -45,6 +54,39 @@ public final class SMCClient: @unchecked Sendable {
     public func readUInt8(_ key: String) -> UInt8? {
         guard let raw = try? readRaw(key), !raw.bytes.isEmpty else { return nil }
         return raw.bytes[0]
+    }
+
+    /// Returns key data type string if the key exists (e.g. `ui8`, `flt`, `fpe2`).
+    public func keyType(_ key: String) -> String? {
+        guard let raw = try? readRaw(key) else { return nil }
+        return raw.dataType.trimmingCharacters(in: CharacterSet(charactersIn: "\0 "))
+    }
+
+    public func writeUInt8(_ key: String, _ value: UInt8) throws {
+        try writeBytes(key, [value])
+    }
+
+    public func writeNumber(_ key: String, _ value: Double) throws {
+        let type = try keyTypeRequired(key)
+        let bytes: [UInt8]
+        switch type {
+        case "ui8", "ui8 ":
+            bytes = [UInt8(clamping: Int(value.rounded()))]
+        case "ui16":
+            let v = UInt16(clamping: Int(value.rounded()))
+            bytes = [UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)]
+        case "fpe2":
+            let v = Int(value.rounded())
+            bytes = [UInt8((v >> 6) & 0xFF), UInt8((v << 2) & 0xFF)]
+        case "flt", "flt ":
+            var f = Float(value)
+            bytes = withUnsafeBytes(of: &f) { Array($0) }
+        default:
+            // Prefer float payload for unknown 4-byte targets (common for F*Tg on AS).
+            var f = Float(value)
+            bytes = withUnsafeBytes(of: &f) { Array($0) }
+        }
+        try writeBytes(key, bytes)
     }
 
     // MARK: - Private
@@ -84,13 +126,64 @@ public final class SMCClient: @unchecked Sendable {
         )
     }
 
+    private func keyTypeRequired(_ key: String) throws -> String {
+        var input = SMCParamStruct()
+        input.key = FourChar.from(key)
+        input.data8 = SMCParamStruct.Selector.getKeyInfo.rawValue
+        var output = SMCParamStruct()
+        try invoke(&input, &output)
+        guard output.result == SMCParamStruct.Result.success.rawValue else {
+            throw SMCError.readFailed(key)
+        }
+        return FourChar.toString(output.keyInfo.dataType)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\0 "))
+    }
+
+    private func writeBytes(_ key: String, _ bytes: [UInt8]) throws {
+        var infoIn = SMCParamStruct()
+        infoIn.key = FourChar.from(key)
+        infoIn.data8 = SMCParamStruct.Selector.getKeyInfo.rawValue
+        var infoOut = SMCParamStruct()
+        try invoke(&infoIn, &infoOut)
+        guard infoOut.result == SMCParamStruct.Result.success.rawValue else {
+            throw SMCError.writeFailed(key, infoOut.result)
+        }
+
+        let size = Int(min(infoOut.keyInfo.dataSize, 32))
+        guard size > 0 else { throw SMCError.writeFailed(key, infoOut.result) }
+
+        var writeIn = SMCParamStruct()
+        writeIn.key = FourChar.from(key)
+        writeIn.keyInfo.dataSize = infoOut.keyInfo.dataSize
+        writeIn.data8 = SMCParamStruct.Selector.writeKey.rawValue
+        withUnsafeMutableBytes(of: &writeIn.bytes) { dest in
+            for i in 0..<size {
+                dest[i] = i < bytes.count ? bytes[i] : 0
+            }
+        }
+
+        var writeOut = SMCParamStruct()
+        try invoke(&writeIn, &writeOut)
+        guard writeOut.result == SMCParamStruct.Result.success.rawValue else {
+            throw SMCError.writeFailed(key, writeOut.result)
+        }
+    }
+
     private func invoke(_ input: inout SMCParamStruct, _ output: inout SMCParamStruct) throws {
         assert(MemoryLayout<SMCParamStruct>.stride == 80, "SMCParamStruct must be 80 bytes")
         let inSize = MemoryLayout<SMCParamStruct>.stride
         var outSize = MemoryLayout<SMCParamStruct>.stride
         let kr = IOConnectCallStructMethod(connection, 2, &input, inSize, &output, &outSize)
         guard kr == KERN_SUCCESS else {
-            throw SMCError.readFailed(FourChar.toString(input.key))
+            let key = FourChar.toString(input.key)
+            let writing = input.data8 == SMCParamStruct.Selector.writeKey.rawValue
+            if writing, kr == Self.ioReturnNotPrivileged {
+                throw SMCError.notPrivileged(key)
+            }
+            if writing {
+                throw SMCError.writeFailed(key, UInt8(truncatingIfNeeded: kr))
+            }
+            throw SMCError.readFailed(key)
         }
     }
 
