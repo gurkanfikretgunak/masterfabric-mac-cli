@@ -12,7 +12,7 @@ public struct SlackIntegrationConfig: Sendable, Codable, Equatable {
     }
 
     public var isConfigured: Bool {
-        enabled && !webhookURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !webhookURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -30,8 +30,7 @@ public struct TelegramIntegrationConfig: Sendable, Codable, Equatable {
     }
 
     public var isConfigured: Bool {
-        enabled
-            && !botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !chatID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
@@ -98,16 +97,15 @@ public struct MailIntegrationConfig: Sendable, Codable, Equatable {
     }
 
     public var isConfigured: Bool {
-        guard enabled,
-              !from.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !to.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return false }
+        let hasIdentity = !from.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !to.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasIdentity else { return false }
         switch provider.lowercased() {
         case "resend":
             return !apiKey.isEmpty
         case "mailgun":
             return !apiKey.isEmpty && !mailgunDomain.isEmpty
-        default: // smtp
+        default:
             return !smtpHost.isEmpty
         }
     }
@@ -132,6 +130,15 @@ public struct IntegrationsConfig: Sendable, Codable, Equatable {
         self.slack = slack
         self.telegram = telegram
         self.mail = mail
+    }
+
+    /// Configured channels in stable order (Slack → Telegram → Mail). Unconfigured are omitted.
+    public var listedKinds: [String] {
+        var list: [String] = []
+        if slack.isConfigured { list.append("slack") }
+        if telegram.isConfigured { list.append("telegram") }
+        if mail.isConfigured { list.append("mail") }
+        return list
     }
 }
 

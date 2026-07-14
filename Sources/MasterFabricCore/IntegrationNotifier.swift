@@ -49,7 +49,7 @@ public enum IntegrationNotifier {
     // MARK: - Slack
 
     private static func sendSlack(_ text: String, _ cfg: SlackIntegrationConfig) -> NotifyDeliveryResult {
-        guard cfg.isConfigured else {
+        guard cfg.isConfigured, cfg.enabled else {
             return NotifyDeliveryResult(channel: "slack", ok: false, detail: "Not configured / disabled")
         }
         guard let url = URL(string: cfg.webhookURL) else {
@@ -74,7 +74,7 @@ public enum IntegrationNotifier {
     // MARK: - Telegram
 
     private static func sendTelegram(_ text: String, _ cfg: TelegramIntegrationConfig) -> NotifyDeliveryResult {
-        guard cfg.isConfigured else {
+        guard cfg.isConfigured, cfg.enabled else {
             return NotifyDeliveryResult(channel: "telegram", ok: false, detail: "Not configured / disabled")
         }
         let token = cfg.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -100,7 +100,7 @@ public enum IntegrationNotifier {
     // MARK: - Mail
 
     private static func sendMail(_ text: String, _ cfg: MailIntegrationConfig) -> NotifyDeliveryResult {
-        guard cfg.isConfigured else {
+        guard cfg.isConfigured, cfg.enabled else {
             return NotifyDeliveryResult(channel: "mail", ok: false, detail: "Not configured / disabled")
         }
         let subject = "\(cfg.subjectPrefix) alert".trimmingCharacters(in: .whitespaces)

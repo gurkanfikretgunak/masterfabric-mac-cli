@@ -370,10 +370,12 @@ extension MF {
                 if format.json {
                     print(try JSONOutput.string(c))
                 } else {
+                    let listed = c.listedKinds.isEmpty ? "none" : c.listedKinds.joined(separator: ", ")
                     print("""
                     Slack:    enabled=\(c.slack.enabled) configured=\(c.slack.isConfigured)
                     Telegram: enabled=\(c.telegram.enabled) configured=\(c.telegram.isConfigured)
                     Mail:     enabled=\(c.mail.enabled) provider=\(c.mail.provider) configured=\(c.mail.isConfigured)
+                    Listed:   \(listed)
                     Config:   \(ConfigStore.configURL.path)
                     """)
                 }

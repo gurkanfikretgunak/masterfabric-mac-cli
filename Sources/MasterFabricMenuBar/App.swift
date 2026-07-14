@@ -78,14 +78,36 @@ final class MenuBarModel: ObservableObject {
     func openAdd(kind: IntegrationKind? = nil) {
         if let kind {
             editingKind = kind
-        } else if !integrations.slack.isConfigured {
-            editingKind = .slack
-        } else if !integrations.telegram.isConfigured {
-            editingKind = .telegram
+        } else if let firstMissing = IntegrationKind.allCases.first(where: { !isConfigured($0) }) {
+            editingKind = firstMissing
         } else {
-            editingKind = .mail
+            editingKind = .slack
         }
         showAddIntegration = true
+    }
+
+    func isConfigured(_ kind: IntegrationKind) -> Bool {
+        switch kind {
+        case .slack: return integrations.slack.isConfigured
+        case .telegram: return integrations.telegram.isConfigured
+        case .mail: return integrations.mail.isConfigured
+        }
+    }
+
+    var listedIntegrations: [IntegrationKind] {
+        IntegrationKind.allCases.filter { isConfigured($0) }
+    }
+
+    var availableToAdd: [IntegrationKind] {
+        IntegrationKind.allCases.filter { !isConfigured($0) }
+    }
+
+    func isEnabled(_ kind: IntegrationKind) -> Bool {
+        switch kind {
+        case .slack: return integrations.slack.enabled
+        case .telegram: return integrations.telegram.enabled
+        case .mail: return integrations.mail.enabled
+        }
     }
 
     func saveIntegrations(_ updated: IntegrationsConfig) {
@@ -110,6 +132,17 @@ final class MenuBarModel: ObservableObject {
         saveIntegrations(updated)
     }
 
+    func remove(_ kind: IntegrationKind) {
+        var updated = integrations
+        switch kind {
+        case .slack: updated.slack = .default
+        case .telegram: updated.telegram = .default
+        case .mail: updated.mail = .default
+        }
+        saveIntegrations(updated)
+        lastNotifyMessage = "\(kind.rawValue) removed"
+    }
+
     func test(_ kind: IntegrationKind) {
         let channel: NotifyChannel
         switch kind {
@@ -123,20 +156,7 @@ final class MenuBarModel: ObservableObject {
     }
 
     func statusLabel(for kind: IntegrationKind) -> String {
-        switch kind {
-        case .slack:
-            if integrations.slack.isConfigured { return "On" }
-            if integrations.slack.enabled { return "Incomplete" }
-            return "Off"
-        case .telegram:
-            if integrations.telegram.isConfigured { return "On" }
-            if integrations.telegram.enabled { return "Incomplete" }
-            return "Off"
-        case .mail:
-            if integrations.mail.isConfigured { return "On · \(integrations.mail.provider)" }
-            if integrations.mail.enabled { return "Incomplete" }
-            return "Off"
-        }
+        isEnabled(kind) ? "On" : "Off"
     }
 }
 
@@ -231,39 +251,49 @@ struct IntegrationsSection: View {
                 Text("Integrations")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Button {
-                    model.openAdd()
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .imageScale(.medium)
+                if !model.availableToAdd.isEmpty {
+                    Button {
+                        model.openAdd()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .imageScale(.medium)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add Slack, Telegram, or Mail")
                 }
-                .buttonStyle(.plain)
-                .help("Add or edit Slack, Telegram, or Mail")
             }
 
-            ForEach(IntegrationKind.allCases) { kind in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(dotColor(for: kind))
-                        .frame(width: 7, height: 7)
-                    Text(kind.rawValue)
-                    Spacer()
-                    Text(model.statusLabel(for: kind))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Button("Edit") { model.openAdd(kind: kind) }
+            if model.listedIntegrations.isEmpty {
+                Text("No integrations yet — tap + to add")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.listedIntegrations) { kind in
+                    HStack(spacing: 8) {
+                        Toggle(kind.rawValue, isOn: Binding(
+                            get: { model.isEnabled(kind) },
+                            set: { model.toggle(kind, enabled: $0) }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+
+                        Spacer(minLength: 0)
+
+                        Button("Edit") { model.openAdd(kind: kind) }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+
+                        Button {
+                            model.remove(kind)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                        }
                         .buttonStyle(.borderless)
-                        .font(.caption)
+                        .help("Remove \(kind.rawValue)")
+                    }
                 }
             }
-        }
-    }
-
-    private func dotColor(for kind: IntegrationKind) -> Color {
-        switch kind {
-        case .slack: return model.integrations.slack.isConfigured ? .green : .secondary.opacity(0.4)
-        case .telegram: return model.integrations.telegram.isConfigured ? .green : .secondary.opacity(0.4)
-        case .mail: return model.integrations.mail.isConfigured ? .green : .secondary.opacity(0.4)
         }
     }
 }
@@ -313,11 +343,12 @@ struct AddIntegrationSheet: View {
             }
 
             Picker("Channel", selection: $kind) {
-                ForEach(IntegrationKind.allCases) { item in
+                ForEach(pickerKinds) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
             .pickerStyle(.segmented)
+            .disabled(pickerKinds.count <= 1)
             .onChange(of: kind) { newValue in
                 load(from: newValue)
             }
@@ -374,8 +405,21 @@ struct AddIntegrationSheet: View {
         .frame(width: 360)
         .onAppear {
             kind = model.editingKind
+            if !pickerKinds.contains(kind), let first = pickerKinds.first {
+                kind = first
+            }
             load(from: kind)
         }
+    }
+
+    /// When adding: only unconfigured channels. When editing an existing one: keep that channel visible.
+    private var pickerKinds: [IntegrationKind] {
+        var kinds = model.availableToAdd
+        if model.isConfigured(model.editingKind), !kinds.contains(model.editingKind) {
+            kinds.insert(model.editingKind, at: 0)
+        }
+        // Stable order
+        return IntegrationKind.allCases.filter { kinds.contains($0) }
     }
 
     private func field(_ title: String, text: Binding<String>, secure: Bool) -> some View {
