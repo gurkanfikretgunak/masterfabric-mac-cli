@@ -2,7 +2,7 @@ import Foundation
 
 /// Single source of truth for the product version (keep in sync with root `VERSION`).
 public enum AppVersion {
-    public static let current = "0.4.1"
+    public static let current = "0.4.2"
     public static let repoOwner = "gurkanfikretgunak"
     public static let repoName = "masterfabric-mac-cli"
     public static var repoURL: String { "https://github.com/\(repoOwner)/\(repoName)" }
@@ -227,12 +227,26 @@ public enum UpdateService {
         "\(AppVersion.repoURL)/raw/main/scripts/install.sh"
     }
 
-    public struct Result: Sendable {
+    public struct Result: Sendable, Codable, Equatable {
         public var performed: Bool
         public var localBefore: String
         public var check: VersionCheckResult
         public var output: String
         public var detail: String
+
+        public init(
+            performed: Bool,
+            localBefore: String,
+            check: VersionCheckResult,
+            output: String,
+            detail: String
+        ) {
+            self.performed = performed
+            self.localBefore = localBefore
+            self.check = check
+            self.output = output
+            self.detail = detail
+        }
     }
 
     /// Check GitHub; if newer (or `force`), run the official install script.

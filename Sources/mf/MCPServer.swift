@@ -189,6 +189,16 @@ final class MCPServer {
                 properties: [:]
             ),
             tool(
+                name: "run_update",
+                description: "Upgrade MasterFabric from the open-source GitHub install script. Returns JSON with performed/check/detail.",
+                properties: [
+                    "force": [
+                        "type": "boolean",
+                        "description": "Reinstall even when already up to date",
+                    ],
+                ]
+            ),
+            tool(
                 name: "notify_send",
                 description: "Send a message via Slack, Telegram, and/or mail integrations.",
                 properties: [
@@ -271,6 +281,9 @@ final class MCPServer {
             return AboutInfo.text()
         case "check_version":
             return try JSONOutput.string(VersionService.check())
+        case "run_update":
+            let force = arguments["force"] as? Bool ?? false
+            return try JSONOutput.string(UpdateService.update(force: force))
         case "notify_status":
             return try JSONOutput.string(ConfigStore.load().integrations)
         case "notify_send":

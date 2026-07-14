@@ -533,10 +533,18 @@ extension MF {
         @Option(name: .long, help: "Install prefix (default: ~/.local).")
         var prefix: String?
 
+        @OptionGroup var format: JSONFlagOptions
+
         func run() throws {
-            print("Checking GitHub…")
+            if !format.json {
+                print("Checking GitHub…")
+            }
             let result = UpdateService.update(force: force, prefix: prefix)
-            print(UpdateService.format(result))
+            if format.json {
+                print(try JSONOutput.string(result))
+            } else {
+                print(UpdateService.format(result))
+            }
             if result.performed == false, result.check.updateAvailable || force {
                 throw ExitCode.failure
             }

@@ -69,6 +69,7 @@ Copy-paste starter: [examples/mcp.json](examples/mcp.json)
 | `get_top` / `get_history` | Hot processes + 1h sparklines |
 | `set_alert_threshold` | Update `config.toml` alerts |
 | `check_version` | Local vs GitHub open-source version |
+| `run_update` | Upgrade from GitHub install script (JSON) |
 | `get_about` | Version + privacy |
 
 **Resource:** `masterfabric://status` — live JSON snapshot.
@@ -150,8 +151,8 @@ mf power | top | history | watch
 mf check [--notify]
 mf notify status | test | send --channel slack "hello"
 mf bot telegram
-mf version [--check]
-mf update [--force]
+mf version [--check] [--json]
+mf update [--force] [--json]
 mf config show | init | set <key> <value>
 mf login enable | disable | status
 mf about [--lang en|tr]
@@ -248,6 +249,7 @@ mf version --check      # compare to GitHub releases/tags (open-source repo)
 mf version --check --json
 mf update               # install newer release from GitHub (scripts/install.sh)
 mf update --force       # reinstall even if already current
+mf update --json        # machine-readable result
 ```
 
 Exit code `2` means an update is available. Install/update from source:
