@@ -3,7 +3,7 @@ import Foundation
 import MasterFabricCore
 import SwiftUI
 
-/// Renders README screenshots (menu bar panel + CLI) without Accessibility permission.
+/// Renders README screenshots without Accessibility permission.
 @main
 @MainActor
 struct GenerateScreenshot {
@@ -15,7 +15,6 @@ struct GenerateScreenshot {
         let info = SystemInfoService.current()
         let battery = BatteryService.current()
         let memory = MemoryService.current()
-        let disk = DiskService.current()
         _ = CPULoadService.current()
         Thread.sleep(forTimeInterval: 0.35)
         let load = CPULoadService.current()
@@ -24,14 +23,13 @@ struct GenerateScreenshot {
         let history = HistoryStore.snapshot()
         var config = ConfigStore.load()
         config.language = "en"
-        // Demo UI only — never bake real tokens into PNGs.
         config.integrations.telegram.enabled = true
         config.integrations.telegram.botToken = "demo"
         config.integrations.telegram.chatID = "123456789"
         let alerts = AlertService.evaluate(
             status: status,
             memory: memory,
-            disk: disk,
+            disk: DiskService.current(),
             battery: battery,
             power: power,
             config: config
@@ -41,9 +39,15 @@ struct GenerateScreenshot {
             .appendingPathComponent("docs/screenshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
+        let display = MenuBarDisplayConfig.default
+        let title = TextFormat.compactStatusBar(status, load: load, battery: battery, display: display)
+        let fanFull = FanService.isFullMode(status.fans)
+
         writePNG(
             content: MenuBarShot(
-                title: TextFormat.compactStatusBar(status, load: load),
+                title: title,
+                fanIsFull: fanFull,
+                showFanBadge: !status.fans.isEmpty,
                 info: info,
                 status: status,
                 load: load,
@@ -56,9 +60,25 @@ struct GenerateScreenshot {
                 integrations: config.integrations
             )
             .padding(20)
-            .frame(width: 360)
+            .frame(width: 380)
             .background(Color(nsColor: .windowBackgroundColor)),
             to: outDir.appendingPathComponent("menubar.png")
+        )
+
+        writePNG(
+            content: MenuBarSettingsShot(draft: display)
+                .padding(20)
+                .frame(width: 380)
+                .background(Color(nsColor: .windowBackgroundColor)),
+            to: outDir.appendingPathComponent("menubar-settings.png")
+        )
+
+        writePNG(
+            content: StatusStylesShot(status: status, load: load, battery: battery, fanIsFull: fanFull)
+                .padding(20)
+                .frame(width: 720)
+                .background(Color(nsColor: .windowBackgroundColor)),
+            to: outDir.appendingPathComponent("menubar-styles.png")
         )
 
         let cliBody = buildCLITranscript(status: status, info: info, load: load, memory: memory)
@@ -79,28 +99,28 @@ struct GenerateScreenshot {
     ) -> String {
         let cpu = status.temperature.cpuCelsius.map { String(format: "%.1f°C", $0) } ?? "N/A"
         let gpu = status.temperature.gpuCelsius.map { String(format: "%.1f°C", $0) } ?? "N/A"
-        let fan: String = {
-            guard let f = status.fans.first, let rpm = f.rpm else { return "N/A" }
-            return String(format: "%.0f RPM", rpm)
+        let fansLine: String = {
+            if status.fans.isEmpty { return "Fan: N/A" }
+            return status.fans.map { fan in
+                let rpm = fan.rpm.map { String(format: "%.0f", $0) } ?? "—"
+                return "\(fan.name) [\(fan.role)]: \(rpm) RPM · \(fan.mode)"
+            }.joined(separator: "\n")
         }()
         return """
         $ mf status
-        CPU \(cpu)  ·  GPU \(gpu)  ·  Fan \(fan)
+        CPU \(cpu)  ·  GPU \(gpu)  ·  Fan \(status.fans.first?.rpm.map { String(format: "%.0f", $0) } ?? "N/A")
 
-        $ mf cpu
-        Load \(String(format: "%.1f%%", load.overallPercent))
+        $ mf fan
+        \(fansLine)
 
-        $ mf memory
-        Used \(String(format: "%.0f%%", memory.usedPercent))  ·  pressure \(memory.pressure)
+        $ mf fan helper status
+        Fan helper: running (no password needed for Auto/Full).
 
-        $ mf notify status
-        ✓ telegram: configured · enabled
-          (tokens stay in ~/.config — never committed)
+        $ mf fan full --elevate
+        ✓ Fans set to Full (max RPM)
 
-        $ mf bot --help
-        OVERVIEW: Run interactive bots that answer with live Mac metrics.
-        SUBCOMMANDS:
-          telegram (default)  Long-poll Telegram with /status /temp /fan …
+        $ mf fan auto --elevate
+        ✓ Fans set to Auto (system thermal)
 
         $ mf about
         \(AboutInfo.product) v\(AboutInfo.version)
@@ -131,10 +151,67 @@ struct GenerateScreenshot {
     }
 }
 
-// MARK: - Menu bar shot (mirrors current panel)
+// MARK: - Shared chrome
+
+private struct StatusStrip: View {
+    let title: String
+    let showBadge: Bool
+    let fanIsFull: Bool
+    var capsule: Bool = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("MF")
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.2))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            HStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(capsule ? .white : .primary)
+                if showBadge {
+                    Text(fanIsFull ? "F" : "A")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            fanIsFull
+                                ? Color(red: 0.20, green: 0.48, blue: 0.96)
+                                : Color(red: 0.18, green: 0.72, blue: 0.36),
+                            in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        )
+                }
+            }
+            .padding(.horizontal, capsule ? 8 : 0)
+            .padding(.vertical, capsule ? 3 : 0)
+            .background(
+                capsule
+                    ? Capsule().fill(Color(white: 0.22).opacity(0.92))
+                    : nil
+            )
+            Spacer()
+        }
+    }
+}
+
+private func shotRow(_ label: String, _ value: String) -> some View {
+    HStack {
+        Text(label).foregroundStyle(.secondary)
+        Spacer()
+        Text(value).font(.body.monospacedDigit())
+    }
+}
+
+// MARK: - Main panel
 
 private struct MenuBarShot: View {
     let title: String
+    let fanIsFull: Bool
+    let showFanBadge: Bool
     let info: SystemInfo
     let status: SystemStatus
     let load: CPULoadInfo
@@ -158,18 +235,8 @@ private struct MenuBarShot: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("MF")
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                Text(title)
-                    .font(.system(size: 12, design: .default).monospacedDigit())
-                Spacer()
-            }
-            .padding(.bottom, 2)
+            StatusStrip(title: title, showBadge: showFanBadge, fanIsFull: fanIsFull)
+                .padding(.bottom, 2)
 
             Text("MasterFabric")
                 .font(.headline)
@@ -177,31 +244,45 @@ private struct MenuBarShot: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-            row("Model", info.model)
-            row("Chip", info.chip)
+            shotRow("Model", info.model)
+            shotRow("Chip", info.chip)
 
             Divider()
 
-            row("CPU", status.temperature.cpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
-            row("GPU", status.temperature.gpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
-            row("Load", String(format: "%.1f%%", load.overallPercent))
-            row("Thermal", power.thermalState)
+            shotRow("CPU", status.temperature.cpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
+            shotRow("GPU", status.temperature.gpuCelsius.map { String(format: "%.1f °C", $0) } ?? "N/A")
+            shotRow("Load", String(format: "%.1f%%", load.overallPercent))
+            shotRow("Thermal", power.thermalState)
 
             if status.fans.isEmpty {
-                row("Fan", "N/A")
+                shotRow("Fan", "N/A")
             } else {
                 ForEach(Array(status.fans.enumerated()), id: \.offset) { _, fan in
-                    row(fan.name, fan.rpm.map { String(format: "%.0f RPM", $0) } ?? "N/A")
+                    let rpm = fan.rpm.map { String(format: "%.0f", $0) } ?? "—"
+                    let max = fan.maxRPM.map { String(format: "%.0f", $0) } ?? "?"
+                    shotRow(fan.name, "\(rpm)/\(max) · \(fan.mode)")
+                }
+                HStack {
+                    Text("Fan control")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("Auto")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                    Text("Full")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.blue)
                 }
             }
 
             Divider()
 
             if battery.isPresent {
-                row("Battery", battery.percent.map { String(format: "%.0f%%", $0) } ?? "N/A")
+                shotRow("Battery", battery.percent.map { String(format: "%.0f%%", $0) } ?? "N/A")
             }
-            row("Memory", String(format: "%.0f%% · %@", memory.usedPercent, memory.pressure))
-            row("CPU hist", history.cpuSparkline)
+            shotRow("Memory", String(format: "%.0f%% · %@", memory.usedPercent, memory.pressure))
+            shotRow("CPU hist", history.cpuSparkline)
 
             Divider()
 
@@ -213,10 +294,6 @@ private struct MenuBarShot: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            Text("Tap an icon to set thresholds · fires to Integrations")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
             HStack(spacing: 8) {
                 ForEach(Array(alertKinds.enumerated()), id: \.offset) { _, item in
                     ZStack {
@@ -226,16 +303,11 @@ private struct MenuBarShot: View {
                         Image(systemName: item.0)
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .help(item.1)
                 }
             }
 
-            Text("Send to Integrations  ●")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
             if !alerts.isEmpty {
-                ForEach(alerts.prefix(3), id: \.self) { alert in
+                ForEach(alerts.prefix(2), id: \.self) { alert in
                     Text(alert)
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -251,23 +323,12 @@ private struct MenuBarShot: View {
                 Image(systemName: "plus.circle.fill")
                     .foregroundStyle(.secondary)
             }
-
             HStack(spacing: 8) {
                 ShotBrandBadge.telegram
-                Text("Telegram")
-                    .font(.callout)
+                Text("Telegram").font(.callout)
                 Spacer()
-                Text("On")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text("Edit")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("On").font(.caption2).foregroundStyle(.secondary)
             }
-
-            Text("✓ telegram: ok")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
 
             Divider()
 
@@ -276,14 +337,89 @@ private struct MenuBarShot: View {
             Text("\(AboutInfo.product) v\(AboutInfo.version)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Author  \(AboutInfo.author)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             Divider()
-            Text("Refresh                                                          Quit")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            HStack {
+                Text("Quit")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        )
+    }
+}
+
+// MARK: - Settings shot
+
+private struct MenuBarSettingsShot: View {
+    let draft: MenuBarDisplayConfig
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Menu Bar Settings")
+                    .font(.headline)
+                Spacer()
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Status item style")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(MenuBarStatusStyle.allCases) { style in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: draft.style == style ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(draft.style == style ? Color.accentColor : .secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(style.title)
+                            .font(.callout.weight(.medium))
+                        Text(style.subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
+            Divider()
+
+            Text("Show in menu bar")
+                .font(.subheadline.weight(.semibold))
+            toggleRow("CPU temperature", draft.showCPUTemp)
+            toggleRow("CPU load %", draft.showLoad)
+            toggleRow("Fan RPM", draft.showFanRPM)
+            toggleRow("Fan A/F badge", draft.showFanBadge)
+
+            Divider()
+
+            Text("Show in panel")
+                .font(.subheadline.weight(.semibold))
+            toggleRow("Fans", draft.panelFans)
+            toggleRow("Fan control", draft.panelFanControl)
+            toggleRow("Alerts", draft.panelAlerts)
+            toggleRow("Integrations", draft.panelIntegrations)
+
+            HStack {
+                Text("Reset").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("Done")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
         }
         .padding(16)
         .background(
@@ -293,11 +429,75 @@ private struct MenuBarShot: View {
         )
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
+    private func toggleRow(_ title: String, _ on: Bool) -> some View {
         HStack {
-            Text(label).foregroundStyle(.secondary)
+            Text(title).font(.caption)
             Spacer()
-            Text(value).font(.body.monospacedDigit())
+            Image(systemName: on ? "switch.2" : "switch.2")
+                .foregroundStyle(on ? Color.green : Color.secondary)
+                .font(.caption)
+            Text(on ? "On" : "Off")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: - Four styles strip
+
+private struct StatusStylesShot: View {
+    let status: SystemStatus
+    let load: CPULoadInfo
+    let battery: BatteryInfo
+    let fanIsFull: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Menu bar status styles")
+                .font(.headline)
+
+            ForEach(MenuBarStatusStyle.allCases) { style in
+                styleRow(style)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        )
+    }
+
+    private func styleRow(_ style: MenuBarStatusStyle) -> some View {
+        var display = MenuBarDisplayConfig.default
+        display.style = style
+        let title = TextFormat.compactStatusBar(
+            status,
+            load: load,
+            battery: battery,
+            display: display
+        )
+        let showBadge = (style == .standard || style == .capsule) && !status.fans.isEmpty
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(style.title)
+                .font(.subheadline.weight(.semibold))
+            Text(style.subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            StatusStrip(
+                title: title,
+                showBadge: showBadge,
+                fanIsFull: fanIsFull,
+                capsule: style == .capsule
+            )
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
         }
     }
 }
@@ -305,10 +505,6 @@ private struct MenuBarShot: View {
 private enum ShotBrandBadge {
     static var telegram: some View {
         logo("brand-telegram")
-    }
-
-    static var slack: some View {
-        logo("brand-slack")
     }
 
     private static func logo(_ name: String) -> some View {

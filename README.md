@@ -26,7 +26,7 @@ Native Swift · Apple Silicon first · **No telemetry** · MIT
 |--------|----------------|
 | **MCP** | AI agents call `get_status`, `get_battery`, `get_cpu_load`, … over stdio |
 | **CLI (`mf`)** | Scriptable metrics with `--json` |
-| **Menu Bar** | Always-on CPU °C · load · fan in the macOS status bar |
+| **Menu Bar** | Always-on status strip (4 styles) · fan Auto/Full · settings gear · alerts |
 
 Built for developers who want local hardware context inside their coding agents — not another closed menu-bar utility.
 
@@ -112,9 +112,24 @@ Homebrew formula (tap after tagging a release): [`Formula/masterfabric.rb`](Form
 
 ## Menu Bar
 
-Live status item (English UI): **CPU °C · load% · Fan RPM**. Click for model, GPU, battery, memory, thermal state, CPU history, **Alerts** (circle icon thresholds), and **Integrations** with official-color brand badges.
+Live status item with configurable styles (CPU °C · load · fan, temp-only, fan-only, or capsule pill). Click for metrics, **Fan Auto/Full**, **Alerts**, **Integrations**, and **Settings** (gear next to Quit).
 
-![MasterFabric menu bar](docs/screenshots/menubar.png)
+![MasterFabric menu bar panel](docs/screenshots/menubar.png)
+
+### Display settings & styles
+
+Open the panel → gear next to **Quit**. Choose a status style and toggle what appears in the strip and dropdown.
+
+| Style | Look |
+|-------|------|
+| **Standard** | CPU · load · fan + green **A** / blue **F** badge |
+| **Temp only** | Just degrees, e.g. `52°` |
+| **Fan only** | Just RPM |
+| **Capsule** | Dark pill background + metrics + badge |
+
+![Menu bar status styles](docs/screenshots/menubar-styles.png)
+
+![Menu bar settings](docs/screenshots/menubar-settings.png)
 
 ```bash
 mf menubar          # launch
@@ -123,6 +138,8 @@ mf login enable     # start at login
 
 App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon).
 
+- **Fan control** — **Auto** / **Full** for CPU + GPU fans (one-time admin helper install)
+- **Settings** — gear next to Quit; saved under `[menubar]` in `config.toml`
 - **Alerts** — tap thermometer / GPU / fan / memory / disk / battery / power icons to edit thresholds; optional **Send to Integrations**
 - **Integrations** — Slack · Telegram · Mail with on/off toggles, Edit, and circle brand badges (configure without the terminal via **+**)
 
@@ -130,7 +147,7 @@ App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon).
 
 ## CLI
 
-Scriptable metrics with `--json`. Example session:
+Scriptable metrics with `--json`. Example session (status, fan helper, Auto/Full):
 
 ![MasterFabric CLI](docs/screenshots/cli.png)
 
