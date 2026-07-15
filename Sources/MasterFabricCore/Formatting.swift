@@ -231,6 +231,8 @@ public enum TextFormat {
         poll_interval_seconds: \(c.pollIntervalSeconds)
         alerts.enabled:        \(c.alerts.enabled)
         alerts.notify_integrations: \(c.alerts.notifyIntegrations)
+        alerts.notify_local:       \(c.alerts.notifyLocal)
+        alerts.notify_cooldown:    \(Int(c.alerts.notifyCooldownSeconds))s
         alerts.cpu_temp:       \(c.alerts.cpuTempEnabled) ≥ \(c.alerts.cpuTempCelsius)°C
         alerts.gpu_temp:       \(c.alerts.gpuTempEnabled) ≥ \(c.alerts.gpuTempCelsius)°C
         alerts.fan_near_max:   \(c.alerts.fanEnabled) ≥ \(c.alerts.fanNearMaxPercent)%

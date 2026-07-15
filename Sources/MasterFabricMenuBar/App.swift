@@ -1,9 +1,70 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 import MasterFabricCore
+
+/// Needed so Notification Center sheets/banners work for an LSUIElement menu bar app.
+final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        LocalNotificationPermissionUX.ensureAccessoryPolicy()
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Recover if a permission flow left us on `.regular` (breaks menu bar clicks).
+        LocalNotificationPermissionUX.ensureAccessoryPolicy()
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
+}
+
+/// Ask for notification permission without breaking MenuBarExtra.
+enum LocalNotificationPermissionUX {
+    static func ensureAccessoryPolicy() {
+        if NSApp.activationPolicy() != .accessory {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    /// Request permission while staying an accessory app. No policy flips, no NSApp.hide
+    /// (those leave MenuBarExtra unable to open again).
+    static func requestWithVisiblePrompt(completion: @escaping (Bool) -> Void) {
+        ensureAccessoryPolicy()
+        NSApp.activate(ignoringOtherApps: true)
+
+        DispatchQueue.main.async {
+            AlertService.promptLocalNotificationPermission { granted in
+                ensureAccessoryPolicy()
+                completion(granted)
+            }
+        }
+    }
+
+    static func openSystemNotificationSettings() {
+        ensureAccessoryPolicy()
+        let candidates = [
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.masterfabric.menubar",
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.notifications",
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+    }
+}
 
 @main
 struct MasterFabricMenuBarApp: App {
+    @NSApplicationDelegateAdaptor(MenuBarAppDelegate.self) private var appDelegate
     @StateObject private var model = MenuBarModel()
 
     init() {
@@ -330,6 +391,7 @@ final class MenuBarModel: ObservableObject {
 
     init() {
         refreshMetrics()
+        // Do not request notification permission on launch — only when user enables the setting.
         let interval = ConfigStore.load().pollIntervalSeconds
         timer = Timer.scheduledTimer(withTimeInterval: max(1.0, interval), repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -367,6 +429,65 @@ final class MenuBarModel: ObservableObject {
         applyStatusItem(from: full)
     }
 
+    func saveNotifyLocal(_ enabled: Bool) {
+        var full = ConfigStore.load()
+        full.alerts.notifyLocal = enabled
+        alertConfig = full.alerts
+        do {
+            try ConfigStore.save(full)
+        } catch {
+            lastNotifyMessage = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Turn local notifications on and ask macOS for permission (panel stays usable).
+    func enableLocalNotifications(completion: @escaping (Bool) -> Void) {
+        LocalNotificationPermissionUX.ensureAccessoryPolicy()
+        lastNotifyMessage = "Requesting notification permission…"
+
+        LocalNotificationPermissionUX.requestWithVisiblePrompt { granted in
+            LocalNotificationPermissionUX.ensureAccessoryPolicy()
+            if granted {
+                self.saveNotifyLocal(true)
+                self.lastNotifyMessage = "Local notifications enabled"
+                completion(true)
+            } else {
+                self.saveNotifyLocal(false)
+                self.lastNotifyMessage = "Notifications not allowed. System Settings → Notifications → MasterFabric"
+                completion(false)
+            }
+        }
+    }
+
+    func disableLocalNotifications() {
+        saveNotifyLocal(false)
+        lastNotifyMessage = "Local notifications off"
+    }
+
+    /// Send a one-off Notification Center banner (for Settings → Test).
+    func sendTestLocalNotification() {
+        LocalNotificationPermissionUX.ensureAccessoryPolicy()
+        AlertService.currentLocalNotificationAuthorized { authorized in
+            if !authorized {
+                self.enableLocalNotifications { granted in
+                    guard granted else {
+                        self.lastNotifyMessage = "Allow notifications first, then tap Test again"
+                        return
+                    }
+                    AlertService.postLocalNotifications([
+                        "Test notification — MasterFabric local alerts are working.",
+                    ])
+                    self.lastNotifyMessage = "Test notification sent"
+                }
+                return
+            }
+            AlertService.postLocalNotifications([
+                "Test notification — MasterFabric local alerts are working.",
+            ])
+            self.lastNotifyMessage = "Test notification sent"
+        }
+    }
+
     private var isEditingInline: Bool {
         showAddIntegration || showEditAlert || showUpdateDialog || showSettings
     }
@@ -400,7 +521,7 @@ final class MenuBarModel: ObservableObject {
         displayConfig = config.menuBar
         applyStatusItem(from: config)
 
-        if config.alerts.notifyIntegrations, !alerts.isEmpty {
+        if config.alerts.notifyIntegrations || config.alerts.notifyLocal, !alerts.isEmpty {
             let results = AlertService.notifyIfNeeded(
                 status: status,
                 memory: memory,
@@ -884,6 +1005,7 @@ struct StatusHomeView: View {
 struct MenuBarSettingsView: View {
     @ObservedObject var model: MenuBarModel
     @State private var draft: MenuBarDisplayConfig = .default
+    @State private var notifyLocal: Bool = false
 
     var body: some View {
         ScrollView {
@@ -901,6 +1023,50 @@ struct MenuBarSettingsView: View {
                     }
                     .buttonStyle(.borderless)
                 }
+
+                // MARK: Notifications (top)
+                Text("Notifications")
+                    .font(.subheadline.weight(.semibold))
+                Toggle("Local notifications on alert", isOn: Binding(
+                    get: { notifyLocal },
+                    set: { on in
+                        if on {
+                            model.enableLocalNotifications { granted in
+                                notifyLocal = granted
+                            }
+                        } else {
+                            notifyLocal = false
+                            model.disableLocalNotifications()
+                        }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.caption)
+                Text("Off by default. Turning On asks for macOS notification permission.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 12) {
+                    Button("Test notification") {
+                        model.sendTestLocalNotification()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .disabled(!notifyLocal)
+                    .help(notifyLocal ? "Send a sample Notification Center banner" : "Enable local notifications first")
+
+                    if !notifyLocal {
+                        Button("Open Notification Settings…") {
+                            LocalNotificationPermissionUX.openSystemNotificationSettings()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                    }
+                }
+
+                Divider()
 
                 Text("Status item style")
                     .font(.subheadline.weight(.semibold))
@@ -969,11 +1135,13 @@ struct MenuBarSettingsView: View {
                 HStack {
                     Button("Reset") {
                         draft = .default
+                        notifyLocal = false
                         preview(draft)
                     }
                     Spacer()
                     Button("Done") {
                         model.saveDisplayConfig(draft)
+                        model.saveNotifyLocal(notifyLocal)
                         model.closeSettings()
                         model.refresh()
                     }
@@ -984,6 +1152,7 @@ struct MenuBarSettingsView: View {
         .frame(maxHeight: 520)
         .onAppear {
             draft = model.displayConfig
+            notifyLocal = model.alertConfig.notifyLocal
         }
     }
 

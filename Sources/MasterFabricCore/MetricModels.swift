@@ -206,6 +206,8 @@ public struct AlertConfig: Sendable, Codable, Equatable {
     public var enabled: Bool
     /// Push triggered alerts to Slack / Telegram / mail (with cooldown).
     public var notifyIntegrations: Bool
+    /// Show macOS Notification Center banners when alerts fire (menu bar app).
+    public var notifyLocal: Bool
     public var notifyCooldownSeconds: Double
 
     public var cpuTempEnabled: Bool
@@ -230,6 +232,7 @@ public struct AlertConfig: Sendable, Codable, Equatable {
     public static let `default` = AlertConfig(
         enabled: true,
         notifyIntegrations: true,
+        notifyLocal: false,
         notifyCooldownSeconds: 300,
         cpuTempEnabled: true,
         cpuTempCelsius: 90,
@@ -248,6 +251,7 @@ public struct AlertConfig: Sendable, Codable, Equatable {
     public init(
         enabled: Bool,
         notifyIntegrations: Bool,
+        notifyLocal: Bool = false,
         notifyCooldownSeconds: Double,
         cpuTempEnabled: Bool,
         cpuTempCelsius: Double,
@@ -264,6 +268,7 @@ public struct AlertConfig: Sendable, Codable, Equatable {
     ) {
         self.enabled = enabled
         self.notifyIntegrations = notifyIntegrations
+        self.notifyLocal = notifyLocal
         self.notifyCooldownSeconds = notifyCooldownSeconds
         self.cpuTempEnabled = cpuTempEnabled
         self.cpuTempCelsius = cpuTempCelsius

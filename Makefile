@@ -50,6 +50,7 @@ install: release
 	'<key>LSMinimumSystemVersion</key><string>13.0</string>' \
 	'<key>LSUIElement</key><true/>' \
 	'<key>NSHighResolutionCapable</key><true/>' \
+	'<key>NSUserNotificationAlertStyle</key><string>alert</string>' \
 	'</dict></plist>' > "$(APP_DIR)/Contents/Info.plist"
 	@echo "Installed mf v$(VERSION) → $(BIN_DIR)/mf"
 	@echo "Installed menu bar app → $(APP_DIR)"

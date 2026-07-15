@@ -295,6 +295,7 @@ final class MCPServer {
             if let v = arguments["battery_percent_min"] as? Int { c.alerts.batteryPercentMin = Double(v) }
             if let v = arguments["enabled"] as? Bool { c.alerts.enabled = v }
             if let v = arguments["notify_integrations"] as? Bool { c.alerts.notifyIntegrations = v }
+            if let v = arguments["notify_local"] as? Bool { c.alerts.notifyLocal = v }
             try ConfigStore.save(c)
             return try JSONOutput.string(c)
         case "get_about":

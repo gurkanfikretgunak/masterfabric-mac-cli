@@ -342,6 +342,8 @@ extension MF {
                     c.alerts.enabled = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "alerts.notify_integrations":
                     c.alerts.notifyIntegrations = ["1", "true", "yes", "on"].contains(value.lowercased())
+                case "alerts.notify_local":
+                    c.alerts.notifyLocal = ["1", "true", "yes", "on"].contains(value.lowercased())
                 case "alerts.notify_cooldown_seconds":
                     c.alerts.notifyCooldownSeconds = Double(value) ?? c.alerts.notifyCooldownSeconds
                 case "alerts.cpu_temp_enabled":

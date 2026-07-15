@@ -63,6 +63,7 @@ public enum ConfigStore {
                 switch key {
                 case "enabled": config.alerts.enabled = value == "true"
                 case "notify_integrations": config.alerts.notifyIntegrations = value == "true"
+                case "notify_local": config.alerts.notifyLocal = value == "true"
                 case "notify_cooldown_seconds":
                     config.alerts.notifyCooldownSeconds = Double(value) ?? config.alerts.notifyCooldownSeconds
                 case "cpu_temp_enabled": config.alerts.cpuTempEnabled = value == "true"
@@ -196,6 +197,7 @@ public enum ConfigStore {
         [alerts]
         enabled = \(config.alerts.enabled)
         notify_integrations = \(config.alerts.notifyIntegrations)
+        notify_local = \(config.alerts.notifyLocal)
         notify_cooldown_seconds = \(config.alerts.notifyCooldownSeconds)
         cpu_temp_enabled = \(config.alerts.cpuTempEnabled)
         cpu_temp_celsius = \(config.alerts.cpuTempCelsius)

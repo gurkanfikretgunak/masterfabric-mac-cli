@@ -65,7 +65,7 @@ public enum AlertService {
         return messages
     }
 
-    /// Deliver alerts to integrations (and optional macOS banner) with cooldown dedupe.
+    /// Deliver alerts to integrations and/or macOS local notifications (cooldown dedupe).
     @discardableResult
     public static func notifyIfNeeded(
         status: SystemStatus,
@@ -85,7 +85,10 @@ public enum AlertService {
             config: config
         )
         guard !messages.isEmpty else { return [] }
-        guard config.alerts.notifyIntegrations || force else { return [] }
+
+        let wantIntegrations = config.alerts.notifyIntegrations || force
+        let wantLocal = config.alerts.notifyLocal || force
+        guard wantIntegrations || wantLocal else { return [] }
 
         let fingerprint = messages.joined(separator: "|")
         let cooldown = max(30, config.alerts.notifyCooldownSeconds)
@@ -107,29 +110,97 @@ public enum AlertService {
 
         guard shouldSend else { return [] }
 
-        let delivered = IntegrationNotifier.deliverAlerts(messages, config: config)
+        var delivered: [NotifyDeliveryResult] = []
+        if wantIntegrations {
+            delivered.append(contentsOf: IntegrationNotifier.deliverAlerts(messages, config: config))
+        }
+        if wantLocal {
+            postLocalNotifications(messages)
+            delivered.append(
+                NotifyDeliveryResult(
+                    channel: "local",
+                    ok: true,
+                    detail: "\(messages.count) banner\(messages.count == 1 ? "" : "s")"
+                )
+            )
+        }
+        return delivered
+    }
 
-        // Local notification only inside a real .app bundle
-        if Bundle.main.bundleIdentifier != nil,
-           Bundle.main.bundleURL.pathExtension == "app"
-        {
-            let center = UNUserNotificationCenter.current()
-            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-                guard granted else { return }
-                for (i, message) in messages.enumerated() {
-                    let content = UNMutableNotificationContent()
-                    content.title = "MasterFabric"
-                    content.body = message
-                    let req = UNNotificationRequest(
-                        identifier: "mf-alert-\(i)-\(Int(Date().timeIntervalSince1970))",
-                        content: content,
-                        trigger: nil
-                    )
-                    center.add(req, withCompletionHandler: nil)
+    /// Ask Notification Center for banner permission.
+    /// Caller should activate the app (and briefly use `.regular` policy for LSUIElement apps)
+    /// before calling, or the system sheet may not appear.
+    public static func promptLocalNotificationPermission(completion: ((Bool) -> Void)? = nil) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    completion?(true)
+                case .denied:
+                    completion?(false)
+                case .notDetermined:
+                    center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                        DispatchQueue.main.async {
+                            completion?(granted)
+                        }
+                    }
+                @unknown default:
+                    completion?(false)
                 }
             }
         }
+    }
 
-        return delivered
+    /// Legacy name — prefer `promptLocalNotificationPermission`.
+    public static func requestLocalNotificationPermission(completion: ((Bool) -> Void)? = nil) {
+        promptLocalNotificationPermission(completion: completion)
+    }
+
+    public static func currentLocalNotificationAuthorized(completion: @escaping (Bool) -> Void) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    completion(true)
+                default:
+                    completion(false)
+                }
+            }
+        }
+    }
+
+    public static func postLocalNotifications(_ messages: [String]) {
+        guard isRunningAsAppBundle else { return }
+        guard !messages.isEmpty else { return }
+
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            let ok: Bool
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                ok = true
+            default:
+                ok = false
+            }
+            guard ok else { return }
+            for (i, message) in messages.enumerated() {
+                let content = UNMutableNotificationContent()
+                content.title = "MasterFabric Alert"
+                content.body = message
+                content.sound = .default
+                let req = UNNotificationRequest(
+                    identifier: "mf-alert-\(Int(Date().timeIntervalSince1970))-\(i)",
+                    content: content,
+                    trigger: nil
+                )
+                center.add(req, withCompletionHandler: nil)
+            }
+        }
+    }
+
+    private static var isRunningAsAppBundle: Bool {
+        Bundle.main.bundleIdentifier != nil
+            && Bundle.main.bundleURL.pathExtension == "app"
     }
 }

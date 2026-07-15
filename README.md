@@ -140,6 +140,7 @@ App bundle: `~/.local/MasterFabricMenuBar.app` (no Dock icon).
 
 - **Fan control** — **Auto** / **Full** for CPU + GPU fans (one-time admin helper install)
 - **Settings** — gear next to Quit; saved under `[menubar]` in `config.toml`
+- **Local notifications** — Settings → **Notifications** (top): off by default; turning On asks macOS for permission; **Test notification** sends a sample banner (`alerts.notify_local`)
 - **Alerts** — tap thermometer / GPU / fan / memory / disk / battery / power icons to edit thresholds; optional **Send to Integrations**
 - **Integrations** — Slack · Telegram · Mail with on/off toggles, Edit, and circle brand badges (configure without the terminal via **+**)
 
