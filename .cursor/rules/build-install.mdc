@@ -1,0 +1,20 @@
+---
+description: Build, install, codesign, and CLT vs Xcode guidance
+alwaysApply: true
+---
+
+# Build & install
+
+- Prefer **`make install`** (release build, copy to `~/.local`, ad-hoc `codesign`, Info.plist for the `.app`).
+- Install prefix: `PREFIX ?= $(HOME)/.local` → `bin/mf`, `bin/MasterFabricMenuBar`, `MasterFabricMenuBar.app`.
+- After copy: `xattr -cr` + `codesign --force --sign -` (unsigned binaries can be SIGKILL’d on newer macOS).
+- Product-only builds when iterating:
+
+```bash
+swift build -c release --product mf
+swift build -c release --product MasterFabricMenuBar
+```
+
+- **CLT without Xcode.app:** `swift-package` / SwiftUI macros may be incomplete. If `@State` fails with `SwiftUIMacros.StateMacro` missing, use `@StateObject` + `ObservableObject` form helpers (see `menubar-swiftui.mdc`). CLI (`mf`) can still build when menubar fails.
+- Do not pipe untrusted remote scripts in agent automation unless the user explicitly asks; the official installer is `scripts/install.sh` from this repo.
+- Verify: `mf version`, `mf status`, `mf menubar`.

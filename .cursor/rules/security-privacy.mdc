@@ -1,0 +1,13 @@
+---
+description: Secrets, integrations, and local-only data handling
+alwaysApply: true
+---
+
+# Security & privacy
+
+- **Never commit** Slack/Telegram webhooks, bot tokens, API keys, SMTP passwords, or personal `chat_id` values. Use placeholders in docs/examples.
+- Integration credentials belong in `~/.config/masterfabric/config.toml` (gitignored user path), not in the repo.
+- Do not log secrets to console, screenshots, release notes, or issue comments.
+- Fan control / LaunchDaemon paths can affect hardware cooling — keep changes conservative; surface clear user consent for privileged helpers.
+- Local notifications and MenuBarExtra: stay `.accessory` / `LSUIElement`; avoid activation-policy flips that break the menu bar item.
+- Treat this as **experimental** software in user-facing copy when relevant; do not claim affiliation with Slack, Telegram, or Apple.

@@ -1,0 +1,18 @@
+---
+description: CLI (mf) and MCP stdio server conventions
+globs: Sources/mf/**/*.swift
+alwaysApply: false
+---
+
+# CLI & MCP
+
+- CLI uses **ArgumentParser** (`Sources/mf/MF.swift`). Subcommands should support scripting; prefer `--json` where metrics are machine-readable.
+- MCP lives in `MCPServer.swift`: **stdio JSON-RPC**, tools like `get_status`, `get_battery`, `set_fan_mode`, `check_version`, `run_update`. Keep tool names stable; document new tools in `README.md` and `examples/mcp.json`.
+- MCP must remain **local-only** (no network relay). Heavy work should call `MasterFabricCore` services.
+- `mf menubar` launches the installed app path under `~/.local`; if missing, tell the user to run `make install`.
+- `mf update` / version check talk to the public GitHub repo — fail gracefully offline; never embed tokens for GitHub API.
+
+```text
+✅ Add tool + README row + examples/mcp.json note
+❌ Rename existing MCP tool without migration note
+```

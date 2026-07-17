@@ -1,0 +1,19 @@
+---
+description: MenuBarExtra SwiftUI pitfalls (CLT macros, window sizing, sheets)
+globs: Sources/MasterFabricMenuBar/**/*.swift
+alwaysApply: false
+---
+
+# Menu bar SwiftUI
+
+- Style is **`MenuBarExtra` + `.menuBarExtraStyle(.window)`**. Prefer **inline** editors over `.sheet` (sheets need two clicks to dismiss).
+- Keep `NSApp` activation policy **`.accessory`**. Permission flows must not leave the app `.regular` or hide the app in a way that breaks reopen.
+- **CLT / no Xcode:** `@State` may fail (`SwiftUIMacros.StateMacro` missing). Use `@StateObject` + `@MainActor class …: ObservableObject` with `@Published` fields for local form state. `@ObservedObject` / `@StateObject` are OK.
+- **Window sizing:** MenuBarExtra keeps a stale clip when content grows (settings / add integration). Measure content height and sync with `NSWindow.setContentSize` (see `MenuBarExtraWindowSizer` / `panelContentHeight` in `App.swift`). Cap tall panels and scroll inside.
+- Status item label: MenuBarExtra strips many SwiftUI backgrounds — complex badges are often pre-rendered `NSImage`s.
+- Brand assets: `Resources/brand-slack.png`, `brand-telegram.png`; install copies into `.app/Contents/Resources`.
+
+```swift
+// ❌ @State private var draft = …   // breaks on some CLT toolchains
+// ✅ @StateObject private var form = DisplaySettingsFormState()
+```
