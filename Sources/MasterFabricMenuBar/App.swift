@@ -3,6 +3,49 @@ import SwiftUI
 import UserNotifications
 import MasterFabricCore
 
+// Command Line Tools (no Xcode.app) often lack SwiftUIMacros.StateMacro for `@State`.
+// Local editable form state uses `@StateObject` + `ObservableObject` instead so
+// `swift build --product MasterFabricMenuBar` succeeds on CLT-only machines.
+@MainActor
+final class DisplaySettingsFormState: ObservableObject {
+    @Published var draft: MenuBarDisplayConfig = .default
+    @Published var notifyLocal: Bool = false
+}
+
+@MainActor
+final class RemoteLabelFormState: ObservableObject {
+    @Published var remoteLabel: String = ""
+}
+
+@MainActor
+final class EditAlertFormState: ObservableObject {
+    @Published var enabled = true
+    @Published var threshold = ""
+    @Published var feedback = ""
+}
+
+@MainActor
+final class AddIntegrationFormState: ObservableObject {
+    @Published var kind: IntegrationKind = .slack
+    @Published var enabled = true
+    @Published var webhookURL = ""
+    @Published var botToken = ""
+    @Published var chatID = ""
+    @Published var provider = "resend"
+    @Published var from = ""
+    @Published var to = ""
+    @Published var subjectPrefix = "[MasterFabric]"
+    @Published var smtpHost = ""
+    @Published var smtpPort = "587"
+    @Published var smtpUsername = ""
+    @Published var smtpPassword = ""
+    @Published var smtpUseTLS = true
+    @Published var apiKey = ""
+    @Published var mailgunDomain = ""
+    @Published var feedback = ""
+}
+
+
 /// Needed so Notification Center sheets/banners work for an LSUIElement menu bar app.
 final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1004,8 +1047,7 @@ struct StatusHomeView: View {
 
 struct MenuBarSettingsView: View {
     @ObservedObject var model: MenuBarModel
-    @State private var draft: MenuBarDisplayConfig = .default
-    @State private var notifyLocal: Bool = false
+    @StateObject private var form = DisplaySettingsFormState()
 
     var body: some View {
         ScrollView {
@@ -1028,14 +1070,14 @@ struct MenuBarSettingsView: View {
                 Text("Notifications")
                     .font(.subheadline.weight(.semibold))
                 Toggle("Local notifications on alert", isOn: Binding(
-                    get: { notifyLocal },
+                    get: { form.notifyLocal },
                     set: { on in
                         if on {
                             model.enableLocalNotifications { granted in
-                                notifyLocal = granted
+                                form.notifyLocal = granted
                             }
                         } else {
-                            notifyLocal = false
+                            form.notifyLocal = false
                             model.disableLocalNotifications()
                         }
                     }
@@ -1054,10 +1096,10 @@ struct MenuBarSettingsView: View {
                     }
                     .font(.caption)
                     .buttonStyle(.borderless)
-                    .disabled(!notifyLocal)
-                    .help(notifyLocal ? "Send a sample Notification Center banner" : "Enable local notifications first")
+                    .disabled(!form.notifyLocal)
+                    .help(form.notifyLocal ? "Send a sample Notification Center banner" : "Enable local notifications first")
 
-                    if !notifyLocal {
+                    if !form.notifyLocal {
                         Button("Open Notification Settings…") {
                             LocalNotificationPermissionUX.openSystemNotificationSettings()
                         }
@@ -1074,12 +1116,12 @@ struct MenuBarSettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(MenuBarStatusStyle.allCases) { style in
                         Button {
-                            draft.style = style
-                            preview(draft)
+                            form.draft.style = style
+                            preview(form.draft)
                         } label: {
                             HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: draft.style == style ? "largecircle.fill.circle" : "circle")
-                                    .foregroundStyle(draft.style == style ? Color.accentColor : .secondary)
+                                Image(systemName: form.draft.style == style ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(form.draft.style == style ? Color.accentColor : .secondary)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(style.title)
                                         .font(.callout.weight(.medium))
@@ -1099,12 +1141,12 @@ struct MenuBarSettingsView: View {
 
                 Text("Show in menu bar")
                     .font(.subheadline.weight(.semibold))
-                toggle("CPU temperature", draft.showCPUTemp) { draft.showCPUTemp = $0; preview(draft) }
-                toggle("GPU temperature", draft.showGPUTemp) { draft.showGPUTemp = $0; preview(draft) }
-                toggle("CPU load %", draft.showLoad) { draft.showLoad = $0; preview(draft) }
-                toggle("Fan RPM", draft.showFanRPM) { draft.showFanRPM = $0; preview(draft) }
-                toggle("Fan A/F badge", draft.showFanBadge) { draft.showFanBadge = $0; preview(draft) }
-                toggle("Battery %", draft.showBattery) { draft.showBattery = $0; preview(draft) }
+                toggle("CPU temperature", form.draft.showCPUTemp) { form.draft.showCPUTemp = $0; preview(form.draft) }
+                toggle("GPU temperature", form.draft.showGPUTemp) { form.draft.showGPUTemp = $0; preview(form.draft) }
+                toggle("CPU load %", form.draft.showLoad) { form.draft.showLoad = $0; preview(form.draft) }
+                toggle("Fan RPM", form.draft.showFanRPM) { form.draft.showFanRPM = $0; preview(form.draft) }
+                toggle("Fan A/F badge", form.draft.showFanBadge) { form.draft.showFanBadge = $0; preview(form.draft) }
+                toggle("Battery %", form.draft.showBattery) { form.draft.showBattery = $0; preview(form.draft) }
 
                 Text("Temp only / Fan only styles ignore most toggles above.")
                     .font(.caption2)
@@ -1116,32 +1158,32 @@ struct MenuBarSettingsView: View {
                     .font(.subheadline.weight(.semibold))
 
                 Group {
-                    toggle("Model", draft.panelModel) { draft.panelModel = $0 }
-                    toggle("Chip", draft.panelChip) { draft.panelChip = $0 }
-                    toggle("CPU", draft.panelCPU) { draft.panelCPU = $0 }
-                    toggle("GPU", draft.panelGPU) { draft.panelGPU = $0 }
-                    toggle("Load", draft.panelLoad) { draft.panelLoad = $0 }
-                    toggle("Thermal", draft.panelThermal) { draft.panelThermal = $0 }
-                    toggle("Fans", draft.panelFans) { draft.panelFans = $0 }
-                    toggle("Fan control", draft.panelFanControl) { draft.panelFanControl = $0 }
-                    toggle("Battery", draft.panelBattery) { draft.panelBattery = $0 }
-                    toggle("Memory", draft.panelMemory) { draft.panelMemory = $0 }
-                    toggle("CPU history", draft.panelCPUHist) { draft.panelCPUHist = $0 }
-                    toggle("Alerts", draft.panelAlerts) { draft.panelAlerts = $0 }
-                    toggle("Integrations", draft.panelIntegrations) { draft.panelIntegrations = $0 }
-                    toggle("About", draft.panelAbout) { draft.panelAbout = $0 }
+                    toggle("Model", form.draft.panelModel) { form.draft.panelModel = $0 }
+                    toggle("Chip", form.draft.panelChip) { form.draft.panelChip = $0 }
+                    toggle("CPU", form.draft.panelCPU) { form.draft.panelCPU = $0 }
+                    toggle("GPU", form.draft.panelGPU) { form.draft.panelGPU = $0 }
+                    toggle("Load", form.draft.panelLoad) { form.draft.panelLoad = $0 }
+                    toggle("Thermal", form.draft.panelThermal) { form.draft.panelThermal = $0 }
+                    toggle("Fans", form.draft.panelFans) { form.draft.panelFans = $0 }
+                    toggle("Fan control", form.draft.panelFanControl) { form.draft.panelFanControl = $0 }
+                    toggle("Battery", form.draft.panelBattery) { form.draft.panelBattery = $0 }
+                    toggle("Memory", form.draft.panelMemory) { form.draft.panelMemory = $0 }
+                    toggle("CPU history", form.draft.panelCPUHist) { form.draft.panelCPUHist = $0 }
+                    toggle("Alerts", form.draft.panelAlerts) { form.draft.panelAlerts = $0 }
+                    toggle("Integrations", form.draft.panelIntegrations) { form.draft.panelIntegrations = $0 }
+                    toggle("About", form.draft.panelAbout) { form.draft.panelAbout = $0 }
                 }
 
                 HStack {
                     Button("Reset") {
-                        draft = .default
-                        notifyLocal = false
-                        preview(draft)
+                        form.draft = .default
+                        form.notifyLocal = false
+                        preview(form.draft)
                     }
                     Spacer()
                     Button("Done") {
-                        model.saveDisplayConfig(draft)
-                        model.saveNotifyLocal(notifyLocal)
+                        model.saveDisplayConfig(form.draft)
+                        model.saveNotifyLocal(form.notifyLocal)
                         model.closeSettings()
                         model.refresh()
                     }
@@ -1151,8 +1193,8 @@ struct MenuBarSettingsView: View {
         }
         .frame(maxHeight: 520)
         .onAppear {
-            draft = model.displayConfig
-            notifyLocal = model.alertConfig.notifyLocal
+            form.draft = model.displayConfig
+            form.notifyLocal = model.alertConfig.notifyLocal
         }
     }
 
@@ -1174,7 +1216,7 @@ struct MenuBarSettingsView: View {
 
 struct AboutSection: View {
     @ObservedObject var model: MenuBarModel
-    @State private var remoteLabel: String = ""
+    @StateObject private var form = RemoteLabelFormState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1204,10 +1246,10 @@ struct AboutSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if !remoteLabel.isEmpty {
-                Text(remoteLabel)
+            if !form.remoteLabel.isEmpty {
+                Text(form.remoteLabel)
                     .font(.caption2)
-                    .foregroundStyle(remoteLabel.contains("Update") ? .orange : .secondary)
+                    .foregroundStyle(form.remoteLabel.contains("Update") ? .orange : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1249,14 +1291,14 @@ struct AboutSection: View {
         guard let result = model.pendingUpdate else { return }
         if let remote = result.remote {
             if result.updateAvailable {
-                remoteLabel = "GitHub latest: v\(remote) — Update available"
+                form.remoteLabel = "GitHub latest: v\(remote) — Update available"
             } else if VersionService.isRemoteNewer(remote: AboutInfo.version, local: remote) {
-                remoteLabel = "GitHub latest: v\(remote) (local ahead)"
+                form.remoteLabel = "GitHub latest: v\(remote) (local ahead)"
             } else {
-                remoteLabel = "GitHub latest: v\(remote) — up to date"
+                form.remoteLabel = "GitHub latest: v\(remote) — up to date"
             }
         } else {
-            remoteLabel = result.detail
+            form.remoteLabel = result.detail
         }
     }
 }
@@ -1341,9 +1383,7 @@ struct AlertsSection: View {
 struct EditAlertForm: View {
     @ObservedObject var model: MenuBarModel
 
-    @State private var enabled = true
-    @State private var threshold = ""
-    @State private var feedback = ""
+    @StateObject private var form = EditAlertFormState()
 
     private var kind: AlertKind { model.editingAlertKind }
 
@@ -1382,14 +1422,14 @@ struct EditAlertForm: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Toggle("Enabled", isOn: $enabled)
+            Toggle("Enabled", isOn: $form.enabled)
 
             if showsThreshold {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(thresholdLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    TextField(thresholdPlaceholder, text: $threshold)
+                    TextField(thresholdPlaceholder, text: $form.threshold)
                         .textFieldStyle(.roundedBorder)
                 }
             } else {
@@ -1399,13 +1439,13 @@ struct EditAlertForm: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("When this fires, enabled Integrations (Slack / Telegram / Mail) receive the alert.")
+            Text("When this fires, form.enabled Integrations (Slack / Telegram / Mail) receive the alert.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if !feedback.isEmpty {
-                Text(feedback)
+            if !form.feedback.isEmpty {
+                Text(form.feedback)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1462,56 +1502,56 @@ struct EditAlertForm: View {
         let a = model.alertConfig
         switch kind {
         case .cpu:
-            enabled = a.cpuTempEnabled
-            threshold = String(format: "%.0f", a.cpuTempCelsius)
+            form.enabled = a.cpuTempEnabled
+            form.threshold = String(format: "%.0f", a.cpuTempCelsius)
         case .gpu:
-            enabled = a.gpuTempEnabled
-            threshold = String(format: "%.0f", a.gpuTempCelsius)
+            form.enabled = a.gpuTempEnabled
+            form.threshold = String(format: "%.0f", a.gpuTempCelsius)
         case .fan:
-            enabled = a.fanEnabled
-            threshold = String(format: "%.0f", a.fanNearMaxPercent)
+            form.enabled = a.fanEnabled
+            form.threshold = String(format: "%.0f", a.fanNearMaxPercent)
         case .memory:
-            enabled = a.memoryPressureNotify
-            threshold = ""
+            form.enabled = a.memoryPressureNotify
+            form.threshold = ""
         case .disk:
-            enabled = a.diskEnabled
-            threshold = String(format: "%.0f", a.diskUsedPercentMax)
+            form.enabled = a.diskEnabled
+            form.threshold = String(format: "%.0f", a.diskUsedPercentMax)
         case .battery:
-            enabled = a.batteryEnabled
-            threshold = String(format: "%.0f", a.batteryPercentMin)
+            form.enabled = a.batteryEnabled
+            form.threshold = String(format: "%.0f", a.batteryPercentMin)
         case .power:
-            enabled = a.lowPowerModeNotify
-            threshold = ""
+            form.enabled = a.lowPowerModeNotify
+            form.threshold = ""
         }
-        feedback = ""
+        form.feedback = ""
     }
 
     private func save() {
         var a = model.alertConfig
-        let value = Double(threshold.trimmingCharacters(in: .whitespacesAndNewlines))
+        let value = Double(form.threshold.trimmingCharacters(in: .whitespacesAndNewlines))
         switch kind {
         case .cpu:
-            a.cpuTempEnabled = enabled
+            a.cpuTempEnabled = form.enabled
             if let value { a.cpuTempCelsius = value }
         case .gpu:
-            a.gpuTempEnabled = enabled
+            a.gpuTempEnabled = form.enabled
             if let value { a.gpuTempCelsius = value }
         case .fan:
-            a.fanEnabled = enabled
+            a.fanEnabled = form.enabled
             if let value { a.fanNearMaxPercent = value }
         case .memory:
-            a.memoryPressureNotify = enabled
+            a.memoryPressureNotify = form.enabled
         case .disk:
-            a.diskEnabled = enabled
+            a.diskEnabled = form.enabled
             if let value { a.diskUsedPercentMax = value }
         case .battery:
-            a.batteryEnabled = enabled
+            a.batteryEnabled = form.enabled
             if let value { a.batteryPercentMin = value }
         case .power:
-            a.lowPowerModeNotify = enabled
+            a.lowPowerModeNotify = form.enabled
         }
         model.saveAlerts(a)
-        feedback = "Saved — Integrations will get this alert when it fires"
+        form.feedback = "Saved — Integrations will get this alert when it fires"
     }
 }
 
@@ -1581,26 +1621,7 @@ struct IntegrationsSection: View {
 struct AddIntegrationForm: View {
     @ObservedObject var model: MenuBarModel
 
-    @State private var kind: IntegrationKind = .slack
-    @State private var enabled = true
-
-    @State private var webhookURL = ""
-    @State private var botToken = ""
-    @State private var chatID = ""
-
-    @State private var provider = "resend"
-    @State private var from = ""
-    @State private var to = ""
-    @State private var subjectPrefix = "[MasterFabric]"
-    @State private var smtpHost = ""
-    @State private var smtpPort = "587"
-    @State private var smtpUsername = ""
-    @State private var smtpPassword = ""
-    @State private var smtpUseTLS = true
-    @State private var apiKey = ""
-    @State private var mailgunDomain = ""
-
-    @State private var feedback = ""
+    @StateObject private var form = AddIntegrationFormState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1616,7 +1637,7 @@ struct AddIntegrationForm: View {
                 Spacer()
 
                 HStack(spacing: 6) {
-                    IntegrationBrandBadge(kind: kind, size: 20)
+                    IntegrationBrandBadge(kind: form.kind, size: 20)
                     Text(model.isConfigured(model.editingKind) ? "Edit integration" : "Add integration")
                         .font(.headline)
                 }
@@ -1633,52 +1654,52 @@ struct AddIntegrationForm: View {
                 .help("Close")
             }
 
-            Picker("Channel", selection: $kind) {
+            Picker("Channel", selection: $form.kind) {
                 ForEach(pickerKinds) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
             .pickerStyle(.segmented)
             .disabled(pickerKinds.count <= 1)
-            .onChange(of: kind) { newValue in
+            .onChange(of: form.kind) { newValue in
                 load(from: newValue)
             }
 
-            Toggle("Enabled", isOn: $enabled)
+            Toggle("Enabled", isOn: $form.enabled)
 
             Group {
-                switch kind {
+                switch form.kind {
                 case .slack:
-                    field("Webhook URL", text: $webhookURL, secure: false)
+                    field("Webhook URL", text: $form.webhookURL, secure: false)
                 case .telegram:
-                    field("Bot token", text: $botToken, secure: true)
-                    field("Chat ID (numeric example: 123456789 — not @username)", text: $chatID, secure: false)
+                    field("Bot token", text: $form.botToken, secure: true)
+                    field("Chat ID (numeric example: 123456789 — not @username)", text: $form.chatID, secure: false)
                 case .mail:
-                    Picker("Provider", selection: $provider) {
+                    Picker("Provider", selection: $form.provider) {
                         Text("Resend").tag("resend")
                         Text("Mailgun").tag("mailgun")
                         Text("SMTP").tag("smtp")
                     }
-                    field("From", text: $from, secure: false)
-                    field("To", text: $to, secure: false)
-                    field("Subject prefix", text: $subjectPrefix, secure: false)
-                    if provider == "smtp" {
-                        field("SMTP host", text: $smtpHost, secure: false)
-                        field("SMTP port", text: $smtpPort, secure: false)
-                        field("Username", text: $smtpUsername, secure: false)
-                        field("Password", text: $smtpPassword, secure: true)
-                        Toggle("Use TLS", isOn: $smtpUseTLS)
+                    field("From", text: $form.from, secure: false)
+                    field("To", text: $form.to, secure: false)
+                    field("Subject prefix", text: $form.subjectPrefix, secure: false)
+                    if form.provider == "smtp" {
+                        field("SMTP host", text: $form.smtpHost, secure: false)
+                        field("SMTP port", text: $form.smtpPort, secure: false)
+                        field("Username", text: $form.smtpUsername, secure: false)
+                        field("Password", text: $form.smtpPassword, secure: true)
+                        Toggle("Use TLS", isOn: $form.smtpUseTLS)
                     } else {
-                        field("API key", text: $apiKey, secure: true)
-                        if provider == "mailgun" {
-                            field("Mailgun domain", text: $mailgunDomain, secure: false)
+                        field("API key", text: $form.apiKey, secure: true)
+                        if form.provider == "mailgun" {
+                            field("Mailgun domain", text: $form.mailgunDomain, secure: false)
                         }
                     }
                 }
             }
 
-            if !feedback.isEmpty {
-                Text(feedback)
+            if !form.feedback.isEmpty {
+                Text(form.feedback)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1696,11 +1717,11 @@ struct AddIntegrationForm: View {
             }
         }
         .onAppear {
-            kind = model.editingKind
-            if !pickerKinds.contains(kind), let first = pickerKinds.first {
-                kind = first
+            form.kind = model.editingKind
+            if !pickerKinds.contains(form.kind), let first = pickerKinds.first {
+                form.kind = first
             }
-            load(from: kind)
+            load(from: form.kind)
         }
     }
 
@@ -1727,70 +1748,70 @@ struct AddIntegrationForm: View {
         }
     }
 
-    private func load(from kind: IntegrationKind) {
+    private func load(from selectedKind: IntegrationKind) {
         let i = model.integrations
-        switch kind {
+        switch selectedKind {
         case .slack:
-            enabled = i.slack.enabled || i.slack.webhookURL.isEmpty
-            webhookURL = i.slack.webhookURL
+            form.enabled = i.slack.enabled || i.slack.webhookURL.isEmpty
+            form.webhookURL = i.slack.webhookURL
         case .telegram:
-            enabled = i.telegram.enabled || i.telegram.botToken.isEmpty
-            botToken = i.telegram.botToken
-            chatID = i.telegram.chatID
+            form.enabled = i.telegram.enabled || i.telegram.botToken.isEmpty
+            form.botToken = i.telegram.botToken
+            form.chatID = i.telegram.chatID
         case .mail:
-            enabled = i.mail.enabled || i.mail.from.isEmpty
-            provider = i.mail.provider
-            from = i.mail.from
-            to = i.mail.to
-            subjectPrefix = i.mail.subjectPrefix
-            smtpHost = i.mail.smtpHost
-            smtpPort = String(i.mail.smtpPort)
-            smtpUsername = i.mail.smtpUsername
-            smtpPassword = i.mail.smtpPassword
-            smtpUseTLS = i.mail.smtpUseTLS
-            apiKey = i.mail.apiKey
-            mailgunDomain = i.mail.mailgunDomain
+            form.enabled = i.mail.enabled || i.mail.from.isEmpty
+            form.provider = i.mail.provider
+            form.from = i.mail.from
+            form.to = i.mail.to
+            form.subjectPrefix = i.mail.subjectPrefix
+            form.smtpHost = i.mail.smtpHost
+            form.smtpPort = String(i.mail.smtpPort)
+            form.smtpUsername = i.mail.smtpUsername
+            form.smtpPassword = i.mail.smtpPassword
+            form.smtpUseTLS = i.mail.smtpUseTLS
+            form.apiKey = i.mail.apiKey
+            form.mailgunDomain = i.mail.mailgunDomain
         }
-        feedback = ""
+        form.feedback = ""
     }
 
     private func save() {
         var updated = model.integrations
-        switch kind {
+        switch form.kind {
         case .slack:
             updated.slack = SlackIntegrationConfig(
-                enabled: enabled,
-                webhookURL: webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                enabled: form.enabled,
+                webhookURL: form.webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         case .telegram:
             updated.telegram = TelegramIntegrationConfig(
-                enabled: enabled,
-                botToken: botToken.trimmingCharacters(in: .whitespacesAndNewlines),
-                chatID: chatID.trimmingCharacters(in: .whitespacesAndNewlines)
+                enabled: form.enabled,
+                botToken: form.botToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                chatID: form.chatID.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         case .mail:
             updated.mail = MailIntegrationConfig(
-                enabled: enabled,
-                provider: provider,
-                from: from.trimmingCharacters(in: .whitespacesAndNewlines),
-                to: to.trimmingCharacters(in: .whitespacesAndNewlines),
-                subjectPrefix: subjectPrefix,
-                smtpHost: smtpHost.trimmingCharacters(in: .whitespacesAndNewlines),
-                smtpPort: Int(smtpPort) ?? 587,
-                smtpUsername: smtpUsername,
-                smtpPassword: smtpPassword,
-                smtpUseTLS: smtpUseTLS,
-                apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
-                mailgunDomain: mailgunDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+                enabled: form.enabled,
+                provider: form.provider,
+                from: form.from.trimmingCharacters(in: .whitespacesAndNewlines),
+                to: form.to.trimmingCharacters(in: .whitespacesAndNewlines),
+                subjectPrefix: form.subjectPrefix,
+                smtpHost: form.smtpHost.trimmingCharacters(in: .whitespacesAndNewlines),
+                smtpPort: Int(form.smtpPort) ?? 587,
+                smtpUsername: form.smtpUsername,
+                smtpPassword: form.smtpPassword,
+                smtpUseTLS: form.smtpUseTLS,
+                apiKey: form.apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+                mailgunDomain: form.mailgunDomain.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
         model.saveIntegrations(updated)
-        feedback = "Saved to config.toml"
+        form.feedback = "Saved form.to config.toml"
     }
 
     private func test() {
         save()
-        model.test(kind)
-        feedback = model.lastNotifyMessage
+        model.test(form.kind)
+        form.feedback = model.lastNotifyMessage
     }
 }
