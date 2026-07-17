@@ -1,0 +1,21 @@
+---
+description: Swift / SPM conventions for MasterFabric sources
+globs: Sources/**/*.swift
+alwaysApply: false
+---
+
+# Swift conventions
+
+- Target **macOS 13+**. Use APIs available without bumping deployment unless requested.
+- Put reusable types/services in **`MasterFabricCore`**. `mf` and `MasterFabricMenuBar` should call Core, not reimplement IOKit/SMC.
+- Prefer small focused types (`*Service`, `*Store`, clear model structs). Avoid mega-files unless extending an existing one (e.g. menubar `App.swift`).
+- Public CLI/MCP surface: keep JSON shapes stable; additive changes preferred over breaking renames.
+- Formatting: match surrounding file style; no drive-by reformats of unrelated code.
+- After changing user-facing version strings, ensure `VERSION` + `make version-sync` stay aligned.
+
+```swift
+// ✅ Shared metric in Core
+let battery = BatteryService.current()
+
+// ❌ Copy-paste SMC reads into MenuBar App.swift
+```

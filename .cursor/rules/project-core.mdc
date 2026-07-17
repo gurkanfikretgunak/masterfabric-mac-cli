@@ -1,0 +1,18 @@
+---
+description: MasterFabric Mac CLI architecture, products, and non-negotiables
+alwaysApply: true
+---
+
+# Project core
+
+- **Stack:** Swift 5.9+ / SPM, macOS 13+, Apple Silicon first. Repo: `gurkanfikretgunak/masterfabric-mac-cli`.
+- **Products:** `mf` (CLI + MCP), `MasterFabricMenuBar`, shared `MasterFabricCore`. Keep logic in Core; thin CLI/UI shells.
+- **Privacy:** Sensors and `config.toml` stay on the Mac. No analytics/telemetry. MCP is **local stdio only**.
+- **Version:** Root `VERSION` is source of truth. After edits run `make version-sync`. Keep `Formula/masterfabric.rb` tag in sync on release.
+- **Language:** Code comments, commits, PR titles/bodies in **English**. Chat may be Turkish.
+- **Docs:** User-facing install/MCP examples live in `README.md` and `examples/`. Prefer updating those over inventing new doc files unless asked.
+
+```text
+✅ Metrics/services → MasterFabricCore
+❌ Duplicate SMC/battery logic inside mf or MenuBar targets
+```
