@@ -1,24 +1,40 @@
 ---
-description: Release workflow — commit, bump version, GitHub release before next feature work
+description: After development finishes, optionally ask about version bump + GitHub release; English PRs on branches
 alwaysApply: true
 ---
 
-# Release workflow (MasterFabric Mac CLI)
+# Post-development release prompt (MasterFabric Mac CLI)
 
-When a feature or fix is **done and ready to ship**, do not leave it only as local commits. Finish the release loop before starting unrelated new work.
+When a feature or fix is **done** (implementation finished and the user has asked to commit, or work is clearly ready to ship), do **not** silently bump the version or create a GitHub release.
 
-## Required sequence
+## Always ask (optional)
 
-1. **Commit** all related changes with a clear message (English).
-2. **Bump version** in root `VERSION` (semver patch/minor as appropriate), then `make version-sync` (keeps `AppVersion.current` aligned). Update `Formula/masterfabric.rb` tag URL if present.
-3. **Push `main`** to GitHub.
+At the end of that work, ask the developer **one optional question**, for example:
+
+> Development looks complete. Do you want to bump `VERSION` and create a GitHub release (`vX.Y.Z`), or skip for now?
+
+- Treat the answer as **optional**: proceed with release only if they explicitly say yes.
+- If they skip, stop after the commit / PR work. Do not bump or tag.
+- Do not start unrelated new work in the same turn after a confirmed release unless they ask.
+
+## Preferred delivery: branch + English PR
+
+For non-trivial changes, prefer a **feature/fix branch** and an **English** pull request so the change history stays reviewable:
+
+1. Create/use a branch (e.g. `feat/…`, `fix/…`).
+2. Commit with a clear **English** message.
+3. Push and open a PR with `gh pr create` — title and body in **English** (Summary + Test plan).
+4. After merge (or when working directly on `main` and they confirm), run the release loop below if they opted in.
+
+## Release sequence (only after explicit yes)
+
+1. **Bump version** in root `VERSION` (semver patch/minor as appropriate), then `make version-sync`. Update `Formula/masterfabric.rb` tag URL if present.
+2. **Commit** the version bump (English message).
+3. **Push `main`** (or the release commit on the agreed branch after merge).
 4. **Tag + release** with `gh`:
    - `git tag -a vX.Y.Z -m "MasterFabric Mac CLI vX.Y.Z"`
    - `git push origin vX.Y.Z`
-   - `gh release create vX.Y.Z --title "vX.Y.Z" --notes "…"`
-5. **Only then** start the next feature/fix branch of work.
-
-## Commands (reference)
+   - `gh release create vX.Y.Z --title "vX.Y.Z" --notes "…"` (English notes)
 
 ```bash
 echo 'X.Y.Z' > VERSION && make version-sync
@@ -29,11 +45,12 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "## …"
 
 ## Do not
 
-- Ship code to `main` without a matching GitHub release when the change is user-facing.
-- Bump `VERSION` without tagging/releasing (or vice versa).
+- Auto-bump `VERSION` or create a release without asking.
+- Bump `VERSION` without tagging/releasing (or vice versa) when they did opt in.
 - Commit secrets, real tokens, or personal `chat_id` values.
 - Skip `make version-sync` after editing `VERSION`.
+- Write PR titles/bodies in a language other than English.
 
-## After release
+## After release (optional)
 
-Optionally verify on the machine: `mf update` / `make install`, then `mf version --check --json`.
+Verify locally if useful: `mf update` / `make install`, then `mf version --check --json`.
