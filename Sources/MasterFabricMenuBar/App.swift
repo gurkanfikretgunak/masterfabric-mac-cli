@@ -423,6 +423,9 @@ final class MenuBarModel: ObservableObject {
 
     @Published var showSettings = false
 
+    /// Measured intrinsic height of the active panel (for MenuBarExtra window sync).
+    @Published var panelContentHeight: CGFloat = 0
+
     /// Inline update prompt (avoid MenuBarExtra `.sheet` dismiss bugs).
     @Published var showUpdateDialog = false
     @Published var pendingUpdate: VersionCheckResult?
@@ -796,33 +799,109 @@ final class MenuBarModel: ObservableObject {
     }
 }
 
+/// Bubbles the intrinsic content height out of MenuBarExtra panels.
+private struct MenuBarContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// MenuBarExtra(.window) keeps a stale NSWindow / hosting-view clip region when
+/// content grows (settings, add integration). Drive `setContentSize` from the
+/// measured SwiftUI height so the popover chrome matches the real layout.
+private struct MenuBarExtraWindowSizer: NSViewRepresentable {
+    var width: CGFloat
+    var height: CGFloat
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.isHidden = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        let width = width
+        let height = height
+        guard width > 1, height > 1 else { return }
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            if let contentView = window.contentView {
+                contentView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                contentView.setContentHuggingPriority(.defaultLow, for: .vertical)
+            }
+            let current = window.contentView?.bounds.size ?? .zero
+            if abs(current.width - width) < 0.5, abs(current.height - height) < 0.5 {
+                return
+            }
+            window.setContentSize(NSSize(width: width, height: height))
+        }
+    }
+}
+
 struct MenuBarPanel: View {
     @ObservedObject var model: MenuBarModel
 
     var body: some View {
+        let width = panelWidth
+        let maxHeight = panelMaxHeight
+        let windowHeight = resolvedWindowHeight(maxHeight: maxHeight)
+
         Group {
-            if model.showUpdateDialog {
-                UpdatePromptView(model: model)
-            } else if model.showSettings {
-                MenuBarSettingsView(model: model)
-            } else if model.showEditAlert {
-                EditAlertForm(model: model)
-                    .id(model.alertEditorSession)
-            } else if model.showAddIntegration {
-                AddIntegrationForm(model: model)
-                    .id(model.editorSession)
+            if needsScroll {
+                ScrollView {
+                    panelContent
+                        .padding(14)
+                        .frame(width: width, alignment: .topLeading)
+                        .background(heightReader)
+                }
+                .frame(width: width, height: windowHeight, alignment: .topLeading)
             } else {
-                StatusHomeView(model: model)
+                panelContent
+                    .padding(14)
+                    .frame(width: width, alignment: .topLeading)
+                    .background(heightReader)
+                    .frame(width: width, height: windowHeight > 1 ? windowHeight : nil, alignment: .topLeading)
             }
         }
-        .padding(14)
-        .frame(width: panelWidth, alignment: .topLeading)
-        // MenuBarExtra(.window) + ScrollView needs an explicit height or content
-        // clips with a tall empty chrome (settings / add-integration editors).
-        .frame(height: usesFixedHeightPanel ? panelHeight : nil, alignment: .topLeading)
+        .id(panelModeID)
+        .onChange(of: panelModeID) { _ in
+            model.panelContentHeight = 0
+        }
+        .onPreferenceChange(MenuBarContentHeightKey.self) { model.panelContentHeight = $0 }
+        .background(
+            Group {
+                if windowHeight > 1 {
+                    MenuBarExtraWindowSizer(width: width, height: windowHeight)
+                }
+            }
+        )
     }
 
-    private var usesFixedHeightPanel: Bool {
+    @ViewBuilder
+    private var panelContent: some View {
+        if model.showUpdateDialog {
+            UpdatePromptView(model: model)
+        } else if model.showSettings {
+            MenuBarSettingsView(model: model)
+        } else if model.showEditAlert {
+            EditAlertForm(model: model)
+                .id(model.alertEditorSession)
+        } else if model.showAddIntegration {
+            AddIntegrationForm(model: model)
+                .id(model.editorSession)
+        } else {
+            StatusHomeView(model: model)
+        }
+    }
+
+    private var heightReader: some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: MenuBarContentHeightKey.self, value: geo.size.height)
+        }
+    }
+
+    private var needsScroll: Bool {
         model.showSettings || model.showAddIntegration || model.showEditAlert
     }
 
@@ -830,10 +909,29 @@ struct MenuBarPanel: View {
         model.showSettings ? 340 : 320
     }
 
-    /// Cap to visible screen so the popover stays usable on smaller displays.
-    private var panelHeight: CGFloat {
+    private var panelMaxHeight: CGFloat {
         let screen = NSScreen.main?.visibleFrame.height ?? 900
-        return min(520, max(380, screen * 0.58))
+        return min(560, max(360, screen * 0.62))
+    }
+
+    private var panelModeID: String {
+        if model.showUpdateDialog { return "update" }
+        if model.showSettings { return "settings" }
+        if model.showEditAlert { return "alert-\(model.alertEditorSession)" }
+        if model.showAddIntegration { return "add-\(model.editorSession)" }
+        return "home"
+    }
+
+    private func resolvedWindowHeight(maxHeight: CGFloat) -> CGFloat {
+        // Include padding that wraps panelContent in the scroll/home branches.
+        let padded = model.panelContentHeight > 1 ? model.panelContentHeight : 0
+        if needsScroll {
+            if padded > 1 {
+                return min(padded, maxHeight)
+            }
+            return maxHeight
+        }
+        return padded > 1 ? padded : 0
     }
 }
 
@@ -1067,8 +1165,7 @@ struct MenuBarSettingsView: View {
     @StateObject private var form = DisplaySettingsFormState()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Menu Bar Settings")
                         .font(.headline)
@@ -1206,9 +1303,8 @@ struct MenuBarSettingsView: View {
                     }
                     .keyboardShortcut(.defaultAction)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             form.draft = model.displayConfig
             form.notifyLocal = model.alertConfig.notifyLocal
@@ -1405,81 +1501,79 @@ struct EditAlertForm: View {
     private var kind: AlertKind { model.editingAlertKind }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Button {
-                        model.closeEditor()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.borderless)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button {
+                    model.closeEditor()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
 
-                    Spacer()
+                Spacer()
 
-                    HStack(spacing: 6) {
-                        Image(systemName: kind.symbol)
-                        Text(kind.title)
-                            .font(.headline)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        model.closeEditor()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Close")
+                HStack(spacing: 6) {
+                    Image(systemName: kind.symbol)
+                    Text(kind.title)
+                        .font(.headline)
                 }
 
-                Text(kind.help)
+                Spacer()
+
+                Button {
+                    model.closeEditor()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Close")
+            }
+
+            Text(kind.help)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Enabled", isOn: $form.enabled)
+
+            if showsThreshold {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(thresholdLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(thresholdPlaceholder, text: $form.threshold)
+                        .textFieldStyle(.roundedBorder)
+                }
+            } else {
+                Text(boolOnlyHint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Toggle("Enabled", isOn: $form.enabled)
-
-                if showsThreshold {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(thresholdLabel)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField(thresholdPlaceholder, text: $form.threshold)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                } else {
-                    Text(boolOnlyHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Text("When this fires, enabled Integrations (Slack / Telegram / Mail) receive the alert.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if !form.feedback.isEmpty {
-                    Text(form.feedback)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Button("Cancel") { model.closeEditor() }
-                    Spacer()
-                    Button("Save") {
-                        save()
-                        model.closeEditor()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("When this fires, enabled Integrations (Slack / Telegram / Mail) receive the alert.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !form.feedback.isEmpty {
+                Text(form.feedback)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Cancel") { model.closeEditor() }
+                Spacer()
+                Button("Save") {
+                    save()
+                    model.closeEditor()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { load() }
     }
 
@@ -1644,101 +1738,99 @@ struct AddIntegrationForm: View {
     @StateObject private var form = AddIntegrationFormState()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Button {
-                        model.closeEditor()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.borderless)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button {
+                    model.closeEditor()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
 
-                    Spacer()
+                Spacer()
 
-                    HStack(spacing: 6) {
-                        IntegrationBrandBadge(kind: form.kind, size: 20)
-                        Text(model.isConfigured(model.editingKind) ? "Edit integration" : "Add integration")
-                            .font(.headline)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        model.closeEditor()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Close")
+                HStack(spacing: 6) {
+                    IntegrationBrandBadge(kind: form.kind, size: 20)
+                    Text(model.isConfigured(model.editingKind) ? "Edit integration" : "Add integration")
+                        .font(.headline)
                 }
 
-                Picker("Channel", selection: $form.kind) {
-                    ForEach(pickerKinds) { item in
-                        Text(item.rawValue).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(pickerKinds.count <= 1)
-                .onChange(of: form.kind) { newValue in
-                    load(from: newValue)
-                }
+                Spacer()
 
-                Toggle("Enabled", isOn: $form.enabled)
-
-                Group {
-                    switch form.kind {
-                    case .slack:
-                        field("Webhook URL", text: $form.webhookURL, secure: false)
-                    case .telegram:
-                        field("Bot token", text: $form.botToken, secure: true)
-                        field("Chat ID (numeric example: 123456789 — not @username)", text: $form.chatID, secure: false)
-                    case .mail:
-                        Picker("Provider", selection: $form.provider) {
-                            Text("Resend").tag("resend")
-                            Text("Mailgun").tag("mailgun")
-                            Text("SMTP").tag("smtp")
-                        }
-                        field("From", text: $form.from, secure: false)
-                        field("To", text: $form.to, secure: false)
-                        field("Subject prefix", text: $form.subjectPrefix, secure: false)
-                        if form.provider == "smtp" {
-                            field("SMTP host", text: $form.smtpHost, secure: false)
-                            field("SMTP port", text: $form.smtpPort, secure: false)
-                            field("Username", text: $form.smtpUsername, secure: false)
-                            field("Password", text: $form.smtpPassword, secure: true)
-                            Toggle("Use TLS", isOn: $form.smtpUseTLS)
-                        } else {
-                            field("API key", text: $form.apiKey, secure: true)
-                            if form.provider == "mailgun" {
-                                field("Mailgun domain", text: $form.mailgunDomain, secure: false)
-                            }
-                        }
-                    }
-                }
-
-                if !form.feedback.isEmpty {
-                    Text(form.feedback)
-                        .font(.caption)
+                Button {
+                    model.closeEditor()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .buttonStyle(.borderless)
+                .help("Close")
+            }
 
-                HStack {
-                    Button("Test") { test() }
-                    Spacer()
-                    Button("Cancel") { model.closeEditor() }
-                    Button("Save") {
-                        save()
-                        model.closeEditor()
-                    }
-                    .keyboardShortcut(.defaultAction)
+            Picker("Channel", selection: $form.kind) {
+                ForEach(pickerKinds) { item in
+                    Text(item.rawValue).tag(item)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .pickerStyle(.segmented)
+            .disabled(pickerKinds.count <= 1)
+            .onChange(of: form.kind) { newValue in
+                load(from: newValue)
+            }
+
+            Toggle("Enabled", isOn: $form.enabled)
+
+            Group {
+                switch form.kind {
+                case .slack:
+                    field("Webhook URL", text: $form.webhookURL, secure: false)
+                case .telegram:
+                    field("Bot token", text: $form.botToken, secure: true)
+                    field("Chat ID (numeric example: 123456789 — not @username)", text: $form.chatID, secure: false)
+                case .mail:
+                    Picker("Provider", selection: $form.provider) {
+                        Text("Resend").tag("resend")
+                        Text("Mailgun").tag("mailgun")
+                        Text("SMTP").tag("smtp")
+                    }
+                    field("From", text: $form.from, secure: false)
+                    field("To", text: $form.to, secure: false)
+                    field("Subject prefix", text: $form.subjectPrefix, secure: false)
+                    if form.provider == "smtp" {
+                        field("SMTP host", text: $form.smtpHost, secure: false)
+                        field("SMTP port", text: $form.smtpPort, secure: false)
+                        field("Username", text: $form.smtpUsername, secure: false)
+                        field("Password", text: $form.smtpPassword, secure: true)
+                        Toggle("Use TLS", isOn: $form.smtpUseTLS)
+                    } else {
+                        field("API key", text: $form.apiKey, secure: true)
+                        if form.provider == "mailgun" {
+                            field("Mailgun domain", text: $form.mailgunDomain, secure: false)
+                        }
+                    }
+                }
+            }
+
+            if !form.feedback.isEmpty {
+                Text(form.feedback)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Button("Test") { test() }
+                Spacer()
+                Button("Cancel") { model.closeEditor() }
+                Button("Save") {
+                    save()
+                    model.closeEditor()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             form.kind = model.editingKind
             if !pickerKinds.contains(form.kind), let first = pickerKinds.first {
