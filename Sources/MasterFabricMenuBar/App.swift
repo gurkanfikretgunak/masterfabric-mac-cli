@@ -816,7 +816,24 @@ struct MenuBarPanel: View {
             }
         }
         .padding(14)
-        .frame(width: model.showSettings ? 340 : 320)
+        .frame(width: panelWidth, alignment: .topLeading)
+        // MenuBarExtra(.window) + ScrollView needs an explicit height or content
+        // clips with a tall empty chrome (settings / add-integration editors).
+        .frame(height: usesFixedHeightPanel ? panelHeight : nil, alignment: .topLeading)
+    }
+
+    private var usesFixedHeightPanel: Bool {
+        model.showSettings || model.showAddIntegration || model.showEditAlert
+    }
+
+    private var panelWidth: CGFloat {
+        model.showSettings ? 340 : 320
+    }
+
+    /// Cap to visible screen so the popover stays usable on smaller displays.
+    private var panelHeight: CGFloat {
+        let screen = NSScreen.main?.visibleFrame.height ?? 900
+        return min(520, max(380, screen * 0.58))
     }
 }
 
@@ -1190,8 +1207,8 @@ struct MenuBarSettingsView: View {
                     .keyboardShortcut(.defaultAction)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 520)
         .onAppear {
             form.draft = model.displayConfig
             form.notifyLocal = model.alertConfig.notifyLocal
@@ -1388,77 +1405,80 @@ struct EditAlertForm: View {
     private var kind: AlertKind { model.editingAlertKind }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button {
-                    model.closeEditor()
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
-                        .font(.subheadline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Button {
+                        model.closeEditor()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.borderless)
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Image(systemName: kind.symbol)
+                        Text(kind.title)
+                            .font(.headline)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        model.closeEditor()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Close")
                 }
-                .buttonStyle(.borderless)
 
-                Spacer()
+                Text(kind.help)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                HStack(spacing: 6) {
-                    Image(systemName: kind.symbol)
-                    Text(kind.title)
-                        .font(.headline)
-                }
+                Toggle("Enabled", isOn: $form.enabled)
 
-                Spacer()
-
-                Button {
-                    model.closeEditor()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Close")
-            }
-
-            Text(kind.help)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Toggle("Enabled", isOn: $form.enabled)
-
-            if showsThreshold {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(thresholdLabel)
+                if showsThreshold {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(thresholdLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField(thresholdPlaceholder, text: $form.threshold)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                } else {
+                    Text(boolOnlyHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    TextField(thresholdPlaceholder, text: $form.threshold)
-                        .textFieldStyle(.roundedBorder)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            } else {
-                Text(boolOnlyHint)
-                    .font(.caption)
+
+                Text("When this fires, enabled Integrations (Slack / Telegram / Mail) receive the alert.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
 
-            Text("When this fires, form.enabled Integrations (Slack / Telegram / Mail) receive the alert.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if !form.feedback.isEmpty {
-                Text(form.feedback)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Button("Cancel") { model.closeEditor() }
-                Spacer()
-                Button("Save") {
-                    save()
-                    model.closeEditor()
+                if !form.feedback.isEmpty {
+                    Text(form.feedback)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .keyboardShortcut(.defaultAction)
+
+                HStack {
+                    Button("Cancel") { model.closeEditor() }
+                    Spacer()
+                    Button("Save") {
+                        save()
+                        model.closeEditor()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { load() }
     }
@@ -1624,97 +1644,100 @@ struct AddIntegrationForm: View {
     @StateObject private var form = AddIntegrationFormState()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button {
-                    model.closeEditor()
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.borderless)
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    IntegrationBrandBadge(kind: form.kind, size: 20)
-                    Text(model.isConfigured(model.editingKind) ? "Edit integration" : "Add integration")
-                        .font(.headline)
-                }
-
-                Spacer()
-
-                Button {
-                    model.closeEditor()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Close")
-            }
-
-            Picker("Channel", selection: $form.kind) {
-                ForEach(pickerKinds) { item in
-                    Text(item.rawValue).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(pickerKinds.count <= 1)
-            .onChange(of: form.kind) { newValue in
-                load(from: newValue)
-            }
-
-            Toggle("Enabled", isOn: $form.enabled)
-
-            Group {
-                switch form.kind {
-                case .slack:
-                    field("Webhook URL", text: $form.webhookURL, secure: false)
-                case .telegram:
-                    field("Bot token", text: $form.botToken, secure: true)
-                    field("Chat ID (numeric example: 123456789 — not @username)", text: $form.chatID, secure: false)
-                case .mail:
-                    Picker("Provider", selection: $form.provider) {
-                        Text("Resend").tag("resend")
-                        Text("Mailgun").tag("mailgun")
-                        Text("SMTP").tag("smtp")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Button {
+                        model.closeEditor()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .font(.subheadline)
                     }
-                    field("From", text: $form.from, secure: false)
-                    field("To", text: $form.to, secure: false)
-                    field("Subject prefix", text: $form.subjectPrefix, secure: false)
-                    if form.provider == "smtp" {
-                        field("SMTP host", text: $form.smtpHost, secure: false)
-                        field("SMTP port", text: $form.smtpPort, secure: false)
-                        field("Username", text: $form.smtpUsername, secure: false)
-                        field("Password", text: $form.smtpPassword, secure: true)
-                        Toggle("Use TLS", isOn: $form.smtpUseTLS)
-                    } else {
-                        field("API key", text: $form.apiKey, secure: true)
-                        if form.provider == "mailgun" {
-                            field("Mailgun domain", text: $form.mailgunDomain, secure: false)
+                    .buttonStyle(.borderless)
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        IntegrationBrandBadge(kind: form.kind, size: 20)
+                        Text(model.isConfigured(model.editingKind) ? "Edit integration" : "Add integration")
+                            .font(.headline)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        model.closeEditor()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Close")
+                }
+
+                Picker("Channel", selection: $form.kind) {
+                    ForEach(pickerKinds) { item in
+                        Text(item.rawValue).tag(item)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(pickerKinds.count <= 1)
+                .onChange(of: form.kind) { newValue in
+                    load(from: newValue)
+                }
+
+                Toggle("Enabled", isOn: $form.enabled)
+
+                Group {
+                    switch form.kind {
+                    case .slack:
+                        field("Webhook URL", text: $form.webhookURL, secure: false)
+                    case .telegram:
+                        field("Bot token", text: $form.botToken, secure: true)
+                        field("Chat ID (numeric example: 123456789 — not @username)", text: $form.chatID, secure: false)
+                    case .mail:
+                        Picker("Provider", selection: $form.provider) {
+                            Text("Resend").tag("resend")
+                            Text("Mailgun").tag("mailgun")
+                            Text("SMTP").tag("smtp")
+                        }
+                        field("From", text: $form.from, secure: false)
+                        field("To", text: $form.to, secure: false)
+                        field("Subject prefix", text: $form.subjectPrefix, secure: false)
+                        if form.provider == "smtp" {
+                            field("SMTP host", text: $form.smtpHost, secure: false)
+                            field("SMTP port", text: $form.smtpPort, secure: false)
+                            field("Username", text: $form.smtpUsername, secure: false)
+                            field("Password", text: $form.smtpPassword, secure: true)
+                            Toggle("Use TLS", isOn: $form.smtpUseTLS)
+                        } else {
+                            field("API key", text: $form.apiKey, secure: true)
+                            if form.provider == "mailgun" {
+                                field("Mailgun domain", text: $form.mailgunDomain, secure: false)
+                            }
                         }
                     }
                 }
-            }
 
-            if !form.feedback.isEmpty {
-                Text(form.feedback)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack {
-                Button("Test") { test() }
-                Spacer()
-                Button("Cancel") { model.closeEditor() }
-                Button("Save") {
-                    save()
-                    model.closeEditor()
+                if !form.feedback.isEmpty {
+                    Text(form.feedback)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .keyboardShortcut(.defaultAction)
+
+                HStack {
+                    Button("Test") { test() }
+                    Spacer()
+                    Button("Cancel") { model.closeEditor() }
+                    Button("Save") {
+                        save()
+                        model.closeEditor()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear {
             form.kind = model.editingKind
@@ -1806,7 +1829,7 @@ struct AddIntegrationForm: View {
             )
         }
         model.saveIntegrations(updated)
-        form.feedback = "Saved form.to config.toml"
+        form.feedback = "Saved to config.toml"
     }
 
     private func test() {
